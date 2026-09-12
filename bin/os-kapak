@@ -1,0 +1,61 @@
+#!/bin/bash
+# Kapak (lid) olayları — Omarchy'nin omarchy-system-lid-close mantığı.
+#
+#   kapandi : harici monitör YOKSA kilitle + dahili ekranı kapat.
+#             Harici monitör VARSA (clamshell) sadece dahili ekranı kapat,
+#             oturum kilitlenmez — çünkü kullanıcı hâlâ ekran başında.
+#   acildi  : dahili ekranı geri aç.
+#
+# NOT: Hyprland 0.56 Lua parser'ında `hyprctl keyword` ÇALIŞMAZ
+# ("keyword can't work with non-legacy parsers. Use eval.") — bu yüzden
+# monitör açma/kapama `hyprctl eval 'hl.monitor{...}'` ile yapılıyor.
+# Geri açarken mod sabit yazılmıyor: kapatmadan önceki mod DURUM dosyasına
+# kaydedilip aynen geri yükleniyor (kullanıcı 60 Hz pil modunu seçmiş olabilir).
+# systemd-logind'in HandleLidSwitch'i (varsayılan: suspend) bundan bağımsız
+# çalışır; burada yaptığımız yalnız kilit + ekran yönetimi.
+set -uo pipefail
+
+DAHILI="${OS_DAHILI_EKRAN:-eDP-1}"
+DURUM="${XDG_RUNTIME_DIR:-/tmp}/os-kapak-mod"
+
+bildir() { command -v notify-send >/dev/null 2>&1 && notify-send "$@" >/dev/null 2>&1; return 0; }
+
+harici_monitor() {
+    hyprctl monitors all -j 2>/dev/null \
+        | jq -e --arg d "$DAHILI" '[.[] | select(.name != $d and (.disabled // false | not))] | length > 0' >/dev/null
+}
+
+case "${1:-kapandi}" in
+  kapandi)
+    if harici_monitor; then
+        # Clamshell: dahili paneli kapat, oturumu kilitleme.
+        # Geri açabilmek için mevcut modu sakla (ör. "1920x1080@60.00000").
+        hyprctl monitors -j 2>/dev/null \
+            | jq -r --arg d "$DAHILI" \
+                '.[] | select(.name==$d) | "\(.width)x\(.height)@\(.refreshRate)"' \
+            > "$DURUM" 2>/dev/null || true
+        hyprctl eval "hl.monitor({ output = '$DAHILI', disabled = true })" >/dev/null 2>&1
+        bildir -a "Kapak" "Clamshell modu — harici ekrana geçildi"
+    else
+        loginctl lock-session
+    fi
+    ;;
+  acildi)
+    mod="preferred"
+    if [[ -s "$DURUM" ]]; then
+        kayitli="$(< "$DURUM")"
+        [[ "$kayitli" == *x*@* ]] && mod="$kayitli"
+    fi
+    hyprctl eval "hl.monitor({ output = '$DAHILI', mode = '$mod', position = 'auto', scale = 1 })" >/dev/null 2>&1
+    # Uyandıktan sonra panel DPMS ile kapalı kalmış olabilir.
+    hyprctl dispatch 'hl.dsp.dpms({ action = "enable" })' >/dev/null 2>&1
+    rm -f "$DURUM"
+    ;;
+  durum)
+    echo "  kapak   : $(cat /proc/acpi/button/lid/*/state 2>/dev/null | awk '{print $2}')"
+    echo "  dahili  : $DAHILI"
+    harici_monitor && echo "  harici  : var (clamshell mümkün)" || echo "  harici  : yok"
+    ;;
+  *)
+    echo "Kullanım: os-kapak <kapandi|acildi|durum>" >&2; exit 1 ;;
+esac

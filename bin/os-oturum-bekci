@@ -1,0 +1,44 @@
+#!/bin/bash
+# Hyprland ölünce hyprland-session.target'i durdurur.
+#
+# NEDEN VAR (2026-09-08, GDM sonsuz şifre döngüsü):
+# Faz 3'te eklenen hyprland-session.target'i baslat-caelestia.sh başlatıyor
+# ama HİÇBİR ŞEY DURDURMUYORDU. Hedef `Wants=graphical-session-pre.target`
+# diyor ve systemd --user oturum başına değil KULLANICI başına çalıştığı için,
+# Hyprland öldükten sonra da graphical-session-pre.target ayakta kalıyordu.
+# GNOME'a giriş yapılınca gnome-session-init-worker o hedefin inaktif olmasını
+# bekliyor, olmayınca "A graphical session is already running!" deyip çöküyor
+# → GDM şifre ekranına geri atıyor → sonsuz döngü.
+#
+# Bu servis KULLANICI YÖNETİCİSİNDE çalışır (oturum scope'unda değil), böylece
+# oturum kapanırken öldürülmez ve temizliği yapabilir. os-oturum'un normal
+# çıkış yolu hedefi zaten durduruyor; bu bekçi ÇÖKME ve başka yollarla
+# kapanma durumları için.
+set -uo pipefail
+
+HEDEF=hyprland-session.target
+
+ornek_sayisi() {
+    hyprctl instances -j 2>/dev/null | jq 'length' 2>/dev/null || echo 0
+}
+
+# 1) Önce Hyprland'in gerçekten ayakta olmasını bekle (en fazla 30 sn).
+#    Bu olmadan, servis erken başlarsa hedefi hemen durdururdu.
+for _ in $(seq 1 30); do
+    [ "$(ornek_sayisi)" -gt 0 ] && break
+    sleep 1
+done
+
+if [ "$(ornek_sayisi)" -eq 0 ]; then
+    echo "Hyprland 30 sn içinde görünmedi — bekçi çıkıyor, hedefe dokunulmadı" >&2
+    exit 0
+fi
+
+# 2) Ölene kadar bekle.
+while [ "$(ornek_sayisi)" -gt 0 ]; do
+    sleep 3
+done
+
+# 3) Temizle. Bu, graphical-session-pre.target'i de serbest bırakır.
+echo "Hyprland kapandı — $HEDEF durduruluyor"
+systemctl --user stop "$HEDEF"

@@ -1,0 +1,22 @@
+# GPU takma adları — Hyprland'in AQ_DRM_DEVICES değişkeni için
+#
+# Neden gerekli: /dev/dri/by-path/ bağlantıları PCI adresine bağlı olduğu için
+# kararlı, ANCAK AQ_DRM_DEVICES yolları ":" ile ayırıyor ve PCI yolları da ":"
+# içeriyor (pci-0000:00:02.0-card) — by-path doğrudan kullanılamıyor.
+# Ham card0/card1 numaraları ise açılışlar arasında yer değiştirebiliyor.
+#
+# KURMADAN ÖNCE ADRESLERİ DOĞRULA:
+#   ls -l /dev/dri/by-path/
+# Intel iGPU neredeyse her zaman 0000:00:02.0'dır; NVIDIA dGPU çoğu dizüstüde
+# 0000:01:00.0'dır ama farklı olabilir. Adresi GPU'yu uyandırmadan okumak için
+# lspci KULLANMA (uyuyan dGPU'yu uyandırır) — by-path listesi yeterli.
+#
+# Kurulum:
+#   sudo install -m 0644 61-gpu-alias.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=drm
+#   ls -l /dev/dri/intel-igpu /dev/dri/nvidia-dgpu
+#
+# Mevcut by-path bağlantıları silinmez; bunlar ek olarak oluşur.
+
+SUBSYSTEM=="drm", SUBSYSTEMS=="pci", KERNEL=="card*", KERNELS=="0000:00:02.0", SYMLINK+="dri/intel-igpu"
+SUBSYSTEM=="drm", SUBSYSTEMS=="pci", KERNEL=="card*", KERNELS=="0000:01:00.0", SYMLINK+="dri/nvidia-dgpu"

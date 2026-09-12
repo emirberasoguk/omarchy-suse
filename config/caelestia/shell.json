@@ -1,0 +1,383 @@
+{
+    "appearance": {
+        "transparency": {
+            "enabled": true
+        }
+    },
+    "bar": {
+        "activeWindow": {
+            "compact": true,
+            "inverted": true,
+            "showOnHover": true
+        },
+        "popouts": {
+            "activeWindow": true
+        },
+        "workspaces": {
+            "activeIndicator": true,
+            "activeTrail": true,
+            "maxWindowIcons": 2,
+            "occupiedBg": true,
+            "showWindows": true,
+            "shown": 4
+        }
+    },
+    "general": {
+        "apps": {
+            "explorer": [
+                "nautilus",
+                "--new-window"
+            ],
+            "terminal": [
+                "kitty"
+            ]
+        }
+    },
+    "launcher": {
+        "actionPrefix": ":",
+        "actions": [
+            {
+                "command": [
+                    "autocomplete",
+                    "calc"
+                ],
+                "description": "Basit matematik (Qalc)",
+                "icon": "calculate",
+                "name": "Hesap makinesi · calc · hesapla"
+            },
+            {
+                "command": [
+                    "autocomplete",
+                    "scheme"
+                ],
+                "description": "Renk şemasını değiştir",
+                "icon": "palette",
+                "name": "Renk şeması · tema · scheme · renk"
+            },
+            {
+                "command": [
+                    "autocomplete",
+                    "wallpaper"
+                ],
+                "description": "Duvar kağıdını değiştir",
+                "icon": "image",
+                "name": "Duvar kağıdı · wallpaper · arkaplan"
+            },
+            {
+                "command": [
+                    "autocomplete",
+                    "variant"
+                ],
+                "description": "Şema varyantını değiştir",
+                "icon": "colors",
+                "name": "Varyant · variant · material"
+            },
+            {
+                "command": [
+                    "caelestia",
+                    "wallpaper",
+                    "-r"
+                ],
+                "description": "Rastgele duvar kağıdına geç",
+                "icon": "casino",
+                "name": "Rastgele duvar kağıdı · random wallpaper"
+            },
+            {
+                "command": [
+                    "setMode",
+                    "light"
+                ],
+                "description": "Açık moda geç",
+                "icon": "light_mode",
+                "name": "Açık tema · light · aydınlık"
+            },
+            {
+                "command": [
+                    "setMode",
+                    "dark"
+                ],
+                "description": "Koyu moda geç",
+                "icon": "dark_mode",
+                "name": "Koyu tema · dark · karanlık"
+            },
+            {
+                "command": [
+                    "caelestia",
+                    "shell",
+                    "nexus",
+                    "open"
+                ],
+                "description": "Kabuğu yapılandır (Nexus)",
+                "icon": "settings",
+                "name": "Ayarlar · settings · nexus · yapılandırma"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-guncelle"
+                ],
+                "description": "zypper dup + flatpak (os-guncelle)",
+                "icon": "system_update",
+                "name": "Sistem güncelle · update · zypper · upgrade"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-webapp"
+                ],
+                "description": "URL'den masaüstü uygulaması yap",
+                "icon": "add_link",
+                "name": "Web uygulaması oluştur · webapp · site · pwa"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-kaldir"
+                ],
+                "description": "Web uygulaması, sistem paketi veya flatpak kaldır",
+                "icon": "delete",
+                "name": "Kaldır · sil · uninstall · remove · temizle"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-uygulama"
+                ],
+                "description": "Ara, kur, kaldır — zypper + flatpak",
+                "icon": "apps",
+                "name": "Uygulama yöneticisi · kur · install · paket · package · store"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-appimage"
+                ],
+                "description": "AppImage dosyasını menüye ekle",
+                "icon": "deployed_code",
+                "name": "AppImage kur · appimage · install"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-yakala",
+                    "ocr"
+                ],
+                "description": "Bölge seç, metni panoya kopyala (OCR)",
+                "icon": "document_scanner",
+                "name": "Ekrandan metin oku · OCR · yazı tanıma · text · kopyala"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-yakala",
+                    "qr"
+                ],
+                "description": "Bölge seç, QR içeriğini panoya kopyala",
+                "icon": "qr_code_scanner",
+                "name": "QR kodu oku · qr · barkod · karekod · scan"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-gece"
+                ],
+                "description": "Gece ışığı",
+                "icon": "nightlight",
+                "name": "Gece ışığı · nightlight · mavi ışık · sıcaklık · göz"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-pencere",
+                    "seffaflik"
+                ],
+                "description": "Şeffaflığı değiştir",
+                "icon": "opacity",
+                "name": "Şeffaflığı değiştir · saydamlık · opacity · transparan"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-pencere",
+                    "bosluk"
+                ],
+                "description": "Boşlukları değiştir",
+                "icon": "padding",
+                "name": "Boşlukları değiştir · gaps · aralık · kenar"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-pencere",
+                    "duzen"
+                ],
+                "description": "Düzeni değiştir",
+                "icon": "view_quilt",
+                "name": "Düzeni değiştir · layout · bölme · split · dizilim"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-pano-kaydet"
+                ],
+                "description": "Panoyu dosyaya kaydet",
+                "icon": "content_paste_go",
+                "name": "Panoyu dosyaya kaydet · clipboard · pano · kopyala"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-paylas",
+                    "pano"
+                ],
+                "description": "Panoyu paylaş",
+                "icon": "share",
+                "name": "Panoyu paylaş · localsend · gönder · share · pano"
+            },
+            {
+                "command": [
+                    "@HOME@/.local/bin/omarchy-suse/os-paylas",
+                    "dosya"
+                ],
+                "description": "Dosya paylaş",
+                "icon": "folder_shared",
+                "name": "Dosya paylaş · localsend · gönder · share · aktar"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-font"
+                ],
+                "description": "Fontlar",
+                "icon": "font_download",
+                "name": "Fontlar · font · yazı tipi · typeface"
+            },
+            {
+                "command": [
+                    "kitty",
+                    "-e",
+                    "@HOME@/.local/bin/omarchy-suse/os-wifi-durum"
+                ],
+                "description": "WiFi durumu",
+                "icon": "wifi",
+                "name": "WiFi durumu · wifi · ağ · network · sinyal · band"
+            },
+            {
+                "command": [
+                    "loginctl",
+                    "lock-session"
+                ],
+                "description": "Oturumu kilitle",
+                "icon": "lock",
+                "name": "Kilitle · lock · ekran kilidi"
+            },
+            {
+                "command": [
+                    "systemctl",
+                    "suspend"
+                ],
+                "description": "Uykuya al",
+                "icon": "bedtime",
+                "name": "Uyku · suspend · uykuya al · beklet"
+            },
+            {
+                "command": [
+                    "hyprctl",
+                    "dispatch",
+                    "hl.dsp.exit()"
+                ],
+                "dangerous": true,
+                "description": "Hyprland'den çık",
+                "icon": "exit_to_app",
+                "name": "Oturumu kapat · logout · çıkış · exit"
+            },
+            {
+                "command": [
+                    "systemctl",
+                    "reboot"
+                ],
+                "dangerous": true,
+                "description": "Bilgisayarı yeniden başlat",
+                "icon": "cached",
+                "name": "Yeniden başlat · reboot · restart"
+            },
+            {
+                "command": [
+                    "systemctl",
+                    "poweroff"
+                ],
+                "dangerous": true,
+                "description": "Bilgisayarı kapat",
+                "icon": "power_settings_new",
+                "name": "Kapat · poweroff · shutdown · kapan"
+            }
+        ],
+        "enableDangerousActions": true,
+        "favouriteApps": [],
+        "hiddenApps": [],
+        "showOnHover": false,
+        "useFuzzy": {
+            "actions": true,
+            "apps": true,
+            "schemes": true,
+            "variants": true,
+            "wallpapers": true
+        }
+    },
+    "services": {
+        "useFahrenheit": false
+    },
+    "session": {
+        "commands": {
+            "hibernate": [
+                "@HOME@/.local/bin/omarchy-suse/os-oturum",
+                "uyku"
+            ],
+            "logout": [
+                "@HOME@/.local/bin/omarchy-suse/os-oturum",
+                "cikis"
+            ],
+            "reboot": [
+                "@HOME@/.local/bin/omarchy-suse/os-oturum",
+                "yeniden"
+            ],
+            "shutdown": [
+                "@HOME@/.local/bin/omarchy-suse/os-oturum",
+                "kapat"
+            ]
+        }
+    },
+    "sidebar": {
+        "dragThreshold": 80
+    },
+    "utilities": {
+        "quickToggles": [
+            {
+                "enabled": true,
+                "id": "wifi"
+            },
+            {
+                "enabled": true,
+                "id": "bluetooth"
+            },
+            {
+                "enabled": true,
+                "id": "mic"
+            },
+            {
+                "enabled": true,
+                "id": "settings"
+            },
+            {
+                "enabled": true,
+                "id": "gameMode"
+            },
+            {
+                "enabled": true,
+                "id": "dnd"
+            },
+            {
+                "enabled": true,
+                "id": "vpn"
+            }
+        ]
+    }
+}

@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""caelestia şemasından kitty renk teması üretir.
+
+Neden gerekli: caelestia'nın enableTerm'ü yalnızca OSC kaçış dizileri
+gönderiyor (/dev/pts'e yazarak AÇIK terminalleri değiştiriyor). Yeni açılan
+kitty pencereleri bunu görmüyor, kitty.conf'taki renklere düşüyor.
+
+Bu script ~/.config/kitty/caelestia.conf üretiyor; kitty.conf onu
+'include' ediyor. Böylece yeni pencereler de doğru renkte açılıyor.
+Açık pencereleri caelestia zaten OSC ile güncelliyor.
+
+theme.postHook'a bağlı — şema her değiştiğinde kendiliğinden çalışır.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+SEMA = Path.home() / ".local/state/caelestia/scheme.json"
+HEDEF = Path.home() / ".config/kitty/caelestia.conf"
+
+
+def hx(c: dict, anahtar: str, yedek: str) -> str:
+    v = c.get(anahtar)
+    if isinstance(v, str) and len(v.lstrip("#")) == 6:
+        return "#" + v.lstrip("#")
+    return "#" + yedek
+
+
+def main() -> int:
+    try:
+        d = json.loads(SEMA.read_text())
+    except Exception as e:
+        print(f"şema okunamadı: {e}", file=sys.stderr)
+        return 1
+
+    c = d.get("colours", d)
+    mod = d.get("mode", "dark")
+
+    fg = hx(c, "onSurface", "e2e2e2")
+    bg = hx(c, "surface", "131313")
+    imlec = hx(c, "secondary", "d0c7a2")
+    ana = hx(c, "primary", "dcc74d")
+    kap = hx(c, "surfaceContainer", "1f1f1f")
+    kaphigh = hx(c, "surfaceContainerHigh", "2a2a2a")
+    dis = hx(c, "outline", "919191")
+    onana = hx(c, "onPrimary", "383000")
+
+    satirlar = [
+        "# caelestia şemasından üretildi — os-kitty-tema",
+        "# ELLE DÜZENLEME: her tema değişiminde üzerine yazılır.",
+        f"# şema: {d.get('name', '?')}/{d.get('flavour', '?')} · {mod}",
+        "",
+        f"foreground            {fg}",
+        f"background            {bg}",
+        f"selection_foreground  {bg}",
+        f"selection_background  {ana}",
+        "",
+        f"cursor                {imlec}",
+        f"cursor_text_color     {bg}",
+        "",
+        f"url_color             {hx(c, 'tertiary', 'a8d0b5')}",
+        "",
+        f"active_border_color     {ana}",
+        f"inactive_border_color   {kap}",
+        f"bell_border_color       {hx(c, 'error', 'ffb4ab')}",
+        "",
+        f"active_tab_foreground   {onana}",
+        f"active_tab_background   {ana}",
+        f"inactive_tab_foreground {dis}",
+        f"inactive_tab_background {kap}",
+        f"tab_bar_background      {kaphigh}",
+        "",
+        "# 16 terminal rengi — şemanın term0..term15'i",
+    ]
+
+    yedekler = ["353433", "b88a00", "e0cd4a", "ffe585", "a5b072", "d6a144",
+                "cfcd76", "e1d8bf", "aaa28f", "d5a100", "f4df41", "fff4d2",
+                "c2c499", "e5b867", "e4df7c", "ffffff"]
+    for i in range(16):
+        satirlar.append(f"color{i:<2} {hx(c, f'term{i}', yedekler[i])}")
+
+    HEDEF.parent.mkdir(parents=True, exist_ok=True)
+    HEDEF.write_text("\n".join(satirlar) + "\n")
+    print(f"✅ {HEDEF}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

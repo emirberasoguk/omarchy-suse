@@ -1,0 +1,9 @@
+[Unit]
+Description=Hyprland kapanınca oturum hedefini durdur
+# Hedefe BAĞLANMAZ: hedef durunca bu servis de durursa temizliği yapamaz.
+# Bilerek bağımsız; kullanıcı yöneticisinde kendi başına yaşar, işi bitince çıkar.
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchy-suse/os-oturum-bekci
+Restart=no

@@ -1,0 +1,161 @@
+#!/bin/bash
+# Oturum eylemleri — kapat / yeniden başlat / oturumu kapat, önce animasyonla.
+#
+# NEDEN BU SCRIPT VAR: caelestia'nın kapatma menüsü komutu doğrudan
+# Quickshell.execDetached ile çalıştırıyor (modules/session/Content.qml:88-90),
+# arada animasyon kancası yok. QML'e dokunmak çatal gerektirir ve çatal
+# kararla kapalı. Ama komutun KENDİSİ shell.json'dan geliyor — araya
+# girebiliyoruz: önce tam ekran bir geçiş çiz, sonra gerçek komutu çalıştır.
+#
+# Kaplama, komut çalıştıktan sonra da ekranda kalır (compositor ölene kadar),
+# böylece kapanma anında masaüstü görünmez — kilit ekranındaki his.
+set -uo pipefail
+
+source ~/.local/lib/omarchy-suse/os-tui.sh   # şema renkleri: TUI_* değişkenleri
+
+EYLEM="${1:-}"
+SURE_MS=700          # kaplamanın açılma süresi
+BEKLE=0.85           # komuttan önce beklenen süre (saniye)
+
+cikis_yap() {
+    # 1) OTURUM HEDEFİNİ DURDUR — en kritik adım.
+    #    hyprland-session.target `Wants=graphical-session-pre.target` diyor ve
+    #    systemd --user oturum başına değil KULLANICI başına çalışıyor. Hedef
+    #    ayakta kalırsa Hyprland öldükten sonra da graphical-session-pre.target
+    #    ayakta kalıyor; sonraki GNOME girişinde gnome-session-init-worker onun
+    #    inaktif olmasını bekliyor, olmayınca "A graphical session is already
+    #    running!" deyip çöküyor → GDM sonsuz şifre döngüsü (2026-09-08).
+    systemctl --user stop hyprland-session.target 2>/dev/null
+
+    # 2) İNATÇI ARTIĞI ÖNCE TEMİZLE.
+    #    caelestia'nın ağ modülü `nmcli monitor` doğuruyor (ebeveyni
+    #    `qs -c caelestia`). Kabuk ölünce süreç öksüz kalıp PID 1'e devroluyor
+    #    ve SIGTERM'i YOK SAYIYOR; bu yüzden `terminate-session` oturumu
+    #    kapatamıyor, "closing" durumunda asılı kalıyor ve her çıkışta bir
+    #    ölü oturum birikiyordu (2026-09-08'de üç tane vardı).
+    #    `-x` tam süreç ADINA bakar, komut satırına değil — kendi kabuğumuzu
+    #    öldürme riski yok (bkz. docs/TUZAKLAR.md).
+    pkill -KILL -u "$USER" -x nmcli 2>/dev/null || true
+
+    # 3) logind oturumunu sonlandır.
+    if [ -n "${XDG_SESSION_ID:-}" ]; then
+        loginctl terminate-session "$XDG_SESSION_ID" 2>/dev/null && return 0
+    fi
+
+    # 4) Yedek: logind yolu tutmazsa compositor'ü doğrudan kapat.
+    hyprctl dispatch 'hl.dsp.exit()'
+}
+
+case "$EYLEM" in
+  kapat)    BASLIK="Kapatılıyor";      SIMGE="power";   KOMUT=(systemctl poweroff) ;;
+  yeniden)  BASLIK="Yeniden başlıyor"; SIMGE="restart"; KOMUT=(systemctl reboot) ;;
+  cikis)    BASLIK="Oturum kapanıyor"; SIMGE="exit";    KOMUT=(cikis_yap) ;;
+  uyku)     BASLIK="Uykuya geçiliyor"; SIMGE="moon";    KOMUT=(systemctl hibernate) ;;
+  dene)     BASLIK="Deneme";           SIMGE="power";   KOMUT=(true) ;;
+  *)
+    echo "Kullanım: os-oturum <kapat|yeniden|cikis|uyku|dene>" >&2
+    echo "  dene: gerçek komutu çalıştırmadan yalnızca geçişi gösterir" >&2
+    exit 1 ;;
+esac
+
+# Şema renkleri (os-tui.sh scheme.json'dan okudu, yoksa varsayılana düştü)
+ZEMIN="#${TUI_SURFACE}"
+RENK="#${TUI_PRIMARY}"
+SOLUK="#${TUI_VARIANT}"
+
+# Eylemin simgesi — menü ikonlarıyla aynı çizim dili (stroke 1.15, 24x24).
+case "$SIMGE" in
+  power)   YOL='<path d="M12 3.5v8"/><path d="M6.8 6.9a7.5 7.5 0 1 0 10.4 0"/>' ;;
+  restart) YOL='<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/>' ;;
+  exit)    YOL='<path d="M14 21H6.5A1.5 1.5 0 0 1 5 19.5v-15A1.5 1.5 0 0 1 6.5 3H14"/><path d="M11 12h9M16.5 8.5L20 12l-3.5 3.5"/>' ;;
+  moon)    YOL='<path d="M20 14.4A8.4 8.4 0 0 1 9.6 4 8.4 8.4 0 1 0 20 14.4z"/>' ;;
+esac
+
+CALISMA="${XDG_RUNTIME_DIR:-/tmp}/os-oturum"
+mkdir -p "$CALISMA"
+
+cat > "$CALISMA/simge.svg" <<SVG
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="96" height="96">
+<g fill="none" stroke="$RENK" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">$YOL</g></svg>
+SVG
+
+cat > "$CALISMA/gecis.qml" <<QML
+import QtQuick
+import Quickshell
+import Quickshell.Wayland
+
+ShellRoot {
+    // GÜVENLİK AĞI: ne olursa olsun 4 saniye sonra kendini kapat.
+    // Kaplama takılı kalırsa ekranı kalıcı olarak kaplardı.
+    Timer { running: true; interval: 4000; onTriggered: Qt.exit(0) }
+
+    Variants {
+        model: Quickshell.screens
+        PanelWindow {
+            required property var modelData
+            screen: modelData
+            anchors { top: true; bottom: true; left: true; right: true }
+            exclusionMode: ExclusionMode.Ignore
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            color: "transparent"
+
+            Rectangle {
+                id: perde
+                anchors.fill: parent
+                color: "$ZEMIN"
+                opacity: 0
+                Component.onCompleted: opacity = 1
+                Behavior on opacity {
+                    NumberAnimation { duration: $SURE_MS; easing.type: Easing.OutCubic }
+                }
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 26
+                    opacity: perde.opacity
+
+                    Image {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        source: "file://$CALISMA/simge.svg"
+                        sourceSize.width: 96
+                        sourceSize.height: 96
+                        scale: perde.opacity < 1 ? 0.86 : 1
+                        Behavior on scale {
+                            NumberAnimation { duration: $SURE_MS; easing.type: Easing.OutBack }
+                        }
+                    }
+
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "$BASLIK"
+                        color: "$SOLUK"
+                        font.pixelSize: 17
+                        font.letterSpacing: 1.4
+                    }
+                }
+            }
+        }
+    }
+}
+QML
+
+# Kaplamayı başlat; ölmesini bekleme (komut çalışırken ekranda kalsın).
+qs -p "$CALISMA/gecis.qml" >/dev/null 2>&1 &
+KAPLAMA=$!
+
+sleep "$BEKLE"
+
+if [[ "$EYLEM" == "dene" ]]; then
+    sleep 1.2
+    kill "$KAPLAMA" 2>/dev/null
+    echo "deneme bitti — gerçek komut çalıştırılmadı"
+    exit 0
+fi
+
+# Kaplama açılamadıysa bile eylem yapılmalı — bekleyip takılma.
+"${KOMUT[@]}" || {
+    # Komut başarısızsa kaplamayı kaldır, kullanıcı ekranda kalmasın.
+    kill "$KAPLAMA" 2>/dev/null
+    exit 1
+}

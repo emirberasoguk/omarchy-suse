@@ -1,0 +1,16 @@
+[Unit]
+Description=Hyprland oturumu
+Documentation=man:systemd.special(7)
+# graphical-session.target'i etkinleştirir. GNOME'da bunu gnome-session yapar;
+# Hyprland'de (uwsm yokken) kimse yapmaz ve xdg-desktop-portal başlamaz
+# (Requisite=graphical-session.target).
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+RefuseManualStart=no
+
+# [Install] bölümü KASITLI OLARAK YOK. Enable edilirse GNOME ve TTY
+# oturumlarında da tetiklenir. Hedefi baslat-caelestia.sh başlatır;
+# os-oturum (normal çıkış) ve hyprland-oturum-bekci.service (çökme) durdurur.
+# Durdurulmazsa sonraki GNOME girişi "A graphical session is already running!"
+# ile çöker → GDM sonsuz şifre döngüsü. Bkz. docs/TUZAKLAR.md

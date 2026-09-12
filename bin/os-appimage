@@ -1,0 +1,166 @@
+#!/bin/bash
+# AppImage kurucu — dosyayı ~/Applications altına alır, içinden .desktop ve
+# ikonu çıkarıp menüye ekler. Omarchy'de karşılığı yok, sıfırdan yazıldı.
+#
+# AppImage'lar --appimage-extract ile açılabilir; içinde .desktop ve ikon bulunur.
+
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+HEDEF="$HOME/Applications"
+DESKTOP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+
+kullanim() {
+    cat <<EOF
+Kullanım:
+  os-appimage <dosya.AppImage>     yerel dosyayı kur
+  os-appimage <url>                indirip kur
+  os-appimage --liste              kurulu AppImage'ları göster
+  os-appimage --kaldir <ad>        kaldır
+EOF
+}
+
+liste() {
+    baslikcik "Kurulu AppImage'lar"
+    local bulundu=0 f
+    for f in "$HEDEF"/*.AppImage; do
+        [ -e "$f" ] || continue
+        printf '   %s%s%s %-36s %s%s%s\n' "$C_ANA" "󰏔" "$TUI_SIFIR" \
+            "$(basename "$f")" "$C_SOLUK" "$(du -h "$f" | cut -f1)" "$TUI_SIFIR"
+        bulundu=1
+    done
+    (( bulundu == 0 )) && bilgi "kurulu AppImage yok"
+    return 0
+}
+
+kaldir() {
+    local ad="$1"
+    local f="$HEDEF/$ad"
+    [ -f "$f" ] || f=$(ls "$HEDEF"/*"$ad"*.AppImage 2>/dev/null | head -1)
+    [ -z "${f:-}" ] || [ ! -f "$f" ] && { hata "Bulunamadı: $ad"; return 1; }
+
+    local temel; temel=$(basename "$f" .AppImage)
+    baslikcik "Silinecek"
+    printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$f"
+    [ -f "$DESKTOP_DIR/$temel.desktop" ] && printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$DESKTOP_DIR/$temel.desktop"
+    [ -f "$ICON_DIR/$temel.png" ] && printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$ICON_DIR/$temel.png"
+    echo
+    if onay "'$temel' kaldırılsın mı?"; then
+        rm -f "$f" "$DESKTOP_DIR/$temel.desktop" "$ICON_DIR/$temel.png"
+        update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+        basari "'$temel' kaldırıldı"
+    else
+        bilgi "Vazgeçildi"
+    fi
+}
+
+kur() {
+    local kaynak="$1"
+    mkdir -p "$HEDEF" "$DESKTOP_DIR" "$ICON_DIR"
+
+    # URL ise indir
+    if [[ $kaynak =~ ^https?:// ]]; then
+        local ad; ad=$(basename "${kaynak%%\?*}")
+        [[ $ad != *.AppImage ]] && ad="${ad}.AppImage"
+        bilgi "İndiriliyor: $ad"
+        curl -fL --progress-bar -o "$HEDEF/$ad" "$kaynak" || { hata "İndirme başarısız"; return 1; }
+        kaynak="$HEDEF/$ad"
+    else
+        [ -f "$kaynak" ] || { hata "Dosya yok: $kaynak"; return 1; }
+        local ad; ad=$(basename "$kaynak")
+        if [ "$(dirname "$(readlink -f "$kaynak")")" != "$HEDEF" ]; then
+            cp -v "$kaynak" "$HEDEF/$ad"
+            kaynak="$HEDEF/$ad"
+        fi
+    fi
+
+    chmod +x "$kaynak"
+    local temel; temel=$(basename "$kaynak" .AppImage)
+
+    # İçinden .desktop ve ikon çıkar
+    local gecici; gecici=$(mktemp -d)
+    bekle "AppImage açılıyor" bash -c "cd '$gecici' && '$kaynak' --appimage-extract >/dev/null 2>&1 || true"
+
+    local kaynak_desktop kaynak_ikon
+    kaynak_desktop=$(find "$gecici/squashfs-root" -maxdepth 2 -name "*.desktop" 2>/dev/null | head -1)
+    kaynak_ikon=$(find "$gecici/squashfs-root" -maxdepth 3 \( -name "*.png" -o -name "*.svg" \) 2>/dev/null \
+                  | grep -viE "screenshot|banner" | head -1)
+
+    local ikon_adi="$temel"
+    if [ -n "${kaynak_ikon:-}" ]; then
+        cp "$kaynak_ikon" "$ICON_DIR/$temel.${kaynak_ikon##*.}" 2>/dev/null && \
+            bilgi "ikon çıkarıldı: $(basename "$kaynak_ikon")"
+    else
+        ikon_adi="application-x-executable"
+        uyari "ikon bulunamadı, genel ikon kullanılacak"
+    fi
+
+    local gorunen="$temel" aciklama="AppImage uygulaması" kategori="Utility;"
+    if [ -n "${kaynak_desktop:-}" ]; then
+        gorunen=$(grep -m1 '^Name=' "$kaynak_desktop" | cut -d= -f2- || echo "$temel")
+        aciklama=$(grep -m1 '^Comment=' "$kaynak_desktop" | cut -d= -f2- || echo "$aciklama")
+        kategori=$(grep -m1 '^Categories=' "$kaynak_desktop" | cut -d= -f2- || echo "$kategori")
+        bilgi ".desktop bilgisi çıkarıldı: $gorunen"
+    fi
+    rm -rf "$gecici"
+
+    cat > "$DESKTOP_DIR/$temel.desktop" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=$gorunen
+Comment=$aciklama
+Exec=$kaynak
+Icon=$ikon_adi
+Terminal=false
+Categories=$kategori
+X-AppImage-File=$kaynak
+EOF
+    chmod +x "$DESKTOP_DIR/$temel.desktop"
+    update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+
+    basari "'$gorunen' kuruldu — launcher'da (Super+Space) aratabilirsin"
+}
+
+# ── Etkileşimli menü (argümansız çağrıda) ─────────────────────────
+menu() {
+    giris "AppImage" "󰏔" "kur · listele · kaldır"
+    while true; do
+        s=$(secim "Ne yapmak istiyorsun?" \
+            "󰉋  Dosyadan kur" \
+            "󰇚  URL'den kur" \
+            "󰀻  Kurulu olanları listele" \
+            "󰩹  Kaldır" \
+            "󰍃  Çık")
+        case "$s" in
+            *"Dosyadan kur")
+                yol=$(giris_al "AppImage dosyasının yolu" "$HOME/Downloads/")
+                [ -n "$yol" ] && kur "${yol/#\~/$HOME}" || bilgi "Vazgeçildi" ;;
+            *"URL'den kur")
+                url=$(giris_al "AppImage indirme bağlantısı")
+                [ -n "$url" ] && kur "$url" || bilgi "Vazgeçildi" ;;
+            *"listele") liste ;;
+            *"Kaldır")
+                mapfile -t bulunanlar < <(find "$HEDEF" -maxdepth 1 -iname "*.AppImage" -printf '%f\n' 2>/dev/null)
+                if (( ${#bulunanlar[@]} == 0 )); then
+                    bilgi "Kurulu AppImage yok"
+                else
+                    sec=$(printf '%s\n' "${bulunanlar[@]}" | ara "Kaldırılacak AppImage · ↵ seç")
+                    [ -n "$sec" ] && kaldir "$sec" || bilgi "Vazgeçildi"
+                fi ;;
+            *"Çık"|"") break ;;
+        esac
+        echo
+    done
+    kapanis
+}
+
+case "${1:-}" in
+    "")           menu ;;
+    -h|--help)    kullanim ;;
+    --liste)      liste ;;
+    --kaldir)     shift; kaldir "${1:-}" ;;
+    *)            kur "$1" ;;
+esac

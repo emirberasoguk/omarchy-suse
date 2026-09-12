@@ -1,0 +1,148 @@
+#!/bin/bash
+# WiFi durumunu göster; profildeki band/AP kilitlerini temizle.
+#
+# Band SABİTLEME kaldırıldı (2026-09-11). Gerekçe: wpa_supplicant'ın AP
+# skorlaması zaten 5 GHz'e bonus veriyor ve ölçümde 2.4 GHz çiğ sinyal
+# olarak daha güçlüyken bile (-45 dBm 5 GHz vs %100 2.4 GHz) üç denemede
+# üçünde de 5 GHz'i seçti. Sabitleme, asıl sorunu -- caelestia'nın yeni
+# profili tıkladığın AP'nin BSSID'sine kilitlemesini -- örtüyordu.
+# Kilit varken NM'nin seçme şansı yoktur; kilidi kaldırmak yeterli.
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+aktif_baglanti() {
+    nmcli -t -f NAME,TYPE con show --active 2>/dev/null \
+        | awk -F: '$2=="802-11-wireless"{print $1; exit}'
+}
+
+aktif_cihaz() {
+    nmcli -t -f TYPE,DEVICE con show --active 2>/dev/null \
+        | awk -F: '$1=="802-11-wireless"{print $2; exit}'
+}
+
+# Profilde otomatik seçimi kısıtlayan bir alan var mı? Varsa listeler.
+kilitleri_bul() {
+    local c="$1" band bssid kanal
+    # nmcli -g, iki nokta üstünü \: diye kaçırır; BSSID okunur kalsın.
+    band=$(nmcli -g 802-11-wireless.band con show "$c" 2>/dev/null)
+    bssid=$(nmcli -g 802-11-wireless.bssid con show "$c" 2>/dev/null | sed 's/\\:/:/g')
+    kanal=$(nmcli -g 802-11-wireless.channel con show "$c" 2>/dev/null)
+    [ -n "$band" ]  && echo "band=$band"
+    [ -n "$bssid" ] && echo "bssid=$bssid"
+    [ -n "$kanal" ] && [ "$kanal" != "0" ] && echo "kanal=$kanal"
+    return 0
+}
+
+band_adi() {
+    local f="${1%%.*}"
+    if   [ -z "$f" ];                       then echo "?"
+    elif [ "$f" -ge 2400 ] && [ "$f" -lt 2500 ]; then echo "2.4 GHz"
+    elif [ "$f" -ge 4900 ] && [ "$f" -lt 5900 ]; then echo "5 GHz"
+    elif [ "$f" -ge 5900 ];                      then echo "6 GHz"
+    else echo "?"; fi
+}
+
+durum() {
+    local c="$1" dev link freq ap sinyal txr rxr genislik kilitler
+    dev=$(aktif_cihaz)
+    link=$(iw dev "${dev:-x}" link 2>/dev/null)
+
+    freq=$(printf '%s\n' "$link"  | awk '/freq:/{print $2; exit}')
+    ap=$(printf '%s\n' "$link"    | awk '/Connected to/{print $3; exit}')
+    sinyal=$(printf '%s\n' "$link"| awk '/signal:/{print $2; exit}')
+    txr=$(printf '%s\n' "$link"   | awk '/tx bitrate:/{print $3" "$4; exit}')
+    rxr=$(printf '%s\n' "$link"   | awk '/rx bitrate:/{print $3" "$4; exit}')
+    genislik=$(printf '%s\n' "$link" | grep -o '[0-9]\+MHz' | head -1)
+
+    baslikcik "Durum"
+    printf '   %sağ      %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$c"
+    printf '   %sband    %s  %s%s%s%s\n' "$C_SOLUK" "$TUI_SIFIR" \
+        "$C_ANA" "$(band_adi "${freq:-}")" "$TUI_SIFIR" \
+        "${freq:+  ($freq MHz${genislik:+, $genislik})}"
+    printf '   %sAP      %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "${ap:-?}"
+    printf '   %ssinyal  %s  %s dBm\n' "$C_SOLUK" "$TUI_SIFIR" "${sinyal:-?}"
+    printf '   %shız     %s  ↑ %s   ↓ %s\n' "$C_SOLUK" "$TUI_SIFIR" "${txr:-?}" "${rxr:-?}"
+
+    kilitler=$(kilitleri_bul "$c")
+    if [ -n "$kilitler" ]; then
+        printf '   %sseçim   %s  %s%s%s\n' "$C_SOLUK" "$TUI_SIFIR" \
+            "$C_IKI" "KİLİTLİ — $(printf '%s' "$kilitler" | tr '\n' ' ')" "$TUI_SIFIR"
+        uyari "profil kilitli; NM en iyi AP'yi seçemiyor — 'Kilitleri kaldır'"
+    else
+        printf '   %sseçim   %s  otomatik (NM en güçlü/en hızlı AP'\''yi seçer)\n' \
+            "$C_SOLUK" "$TUI_SIFIR"
+    fi
+    return 0
+}
+
+gorunen_aglar() {
+    baslikcik "Görünen ağlar"
+    nmcli -t -f IN-USE,SSID,FREQ,SIGNAL dev wifi list 2>/dev/null \
+        | awk -F: 'NR<=12 && $2!="" {
+            isaret = ($1=="*") ? "●" : "·";
+            printf "   %s %-24s %-10s %%%s\n", isaret, $2, $3, $4 }'
+}
+
+kilitleri_kaldir() {
+    local c="$1"
+    if [ -z "$(kilitleri_bul "$c")" ]; then
+        basari "kilit yok — seçim zaten otomatik"
+        return 0
+    fi
+
+    bekle "kilitler kaldırılıyor" bash -c '
+        nmcli con mod "$1" \
+            802-11-wireless.bssid "" \
+            802-11-wireless.channel "" \
+            802-11-wireless.band "" \
+        && nmcli con up "$1" >/dev/null
+    ' _ "$c"
+
+    if [ $? -eq 0 ]; then
+        bildir -a "WiFi" "Band/AP kilidi kaldırıldı"
+        basari "kilitler kaldırıldı — seçim otomatik"
+    else
+        hata "kilitler kaldırılamadı"
+        return 1
+    fi
+}
+
+AKTIF=$(aktif_baglanti)
+[ -z "$AKTIF" ] && { hata "Aktif WiFi bağlantısı yok"; exit 1; }
+
+# ── CLI yolu ──────────────────────────────────────────────────────
+case "${1:-}" in
+  goster|durum) baslik "WiFi Durumu" "󰤨" "$AKTIF"; durum "$AKTIF"; exit 0 ;;
+  temizle|auto|oto)
+                kilitleri_kaldir "$AKTIF"; exit $? ;;
+  -h|--help)
+    echo "Kullanım: os-wifi-durum [goster|temizle]  (argümansız: menü)"
+    echo "  goster  : band, AP, sinyal, link hızı ve kilit durumu"
+    echo "  temizle : profildeki band/AP/kanal kilitlerini kaldırır"
+    echo
+    echo "Band sabitleme kaldırıldı: NM/wpa_supplicant 5 GHz'i zaten"
+    echo "kendi seçiyor. Sorun yaşıyorsan sebep neredeyse her zaman"
+    echo "caelestia'nın koyduğu BSSID kilidi olur; 'temizle' onu çözer."
+    exit 0 ;;
+esac
+
+# ── Etkileşimli menü ──────────────────────────────────────────────
+giris "WiFi Durumu" "󰤨" "band seçimi NM'ye bırakılmıştır"
+durum "$AKTIF"
+echo
+
+while true; do
+    s=$(secim "Ne yapmak istiyorsun?" \
+        "󰑓  Kilitleri kaldır (otomatik seçime dön)" \
+        "󰤥  Görünen ağları listele" \
+        "󰋼  Durumu yenile" \
+        "󰍃  Çık")
+    case "$s" in
+        *"Kilitleri"*)  kilitleri_kaldir "$AKTIF" ;;
+        *"Görünen"*)    bekle "ağlar taranıyor" nmcli dev wifi rescan; gorunen_aglar ;;
+        *"Durumu"*)     durum "$AKTIF" ;;
+        *"Çık"|"")      break ;;
+    esac
+    echo
+done
+kapanis

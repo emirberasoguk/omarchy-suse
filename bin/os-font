@@ -1,0 +1,114 @@
+#!/bin/bash
+# Sistem fontlarını listele / değiştir.
+# caelestia'nın kendi kabuk fontu Nexus → Appearance altında; burası GTK tarafı.
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+# fc-list ham çıktısı bitmap (bguq*), CJK ve stil varyantlarıyla dolu.
+# scalable=true bitmap'leri eler; geri kalanı da temizliyoruz.
+font_listesi() {
+    local desen="$1"   # :spacing=100 (monospace) veya boş (hepsi)
+    fc-list "${desen}:scalable=true" family 2>/dev/null \
+        | tr ',' '\n' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+        | grep -vE '^$' \
+        | grep -vE '^(AR PL|Noto (Sans|Serif) (CJK|Arabic|Hebrew|Thai|Devanagari|Tamil|Telugu|Bengali|Ethiopic|Georgian|Armenian|Khmer|Lao|Myanmar|Sinhala)|bguq|Droid Sans Fallback|WenQuanYi)' \
+        | grep -vE ' (Extra|Semi|Ultra)?(Light|Thin|Bold|Black|Medium|Regular|Condensed|Expanded)$' \
+        | grep -vE '^[a-z]{2,}[0-9]+$' \
+        | grep -vE '^(CCIcons|ContextNavigation|Standard Symbols|D050000L|C059|Z003|P052|URW |Dummy)' \
+        | grep -vE '\-\-' \
+        | awk 'length($0) >= 4' \
+        | grep -vE '^[a-z0-9]+$' \
+        | sort -u
+}
+
+mevcut_durum() {
+    baslikcik "Şu anki"
+    printf '   %sarayüz %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$(gsettings get org.gnome.desktop.interface font-name 2>/dev/null | tr -d "'")"
+    printf '   %smono   %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$(gsettings get org.gnome.desktop.interface monospace-font-name 2>/dev/null | tr -d "'")"
+    printf '   %sbelge  %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$(gsettings get org.gnome.desktop.interface document-font-name 2>/dev/null | tr -d "'")"
+    printf '   %skitty  %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$(grep -m1 '^font_family' ~/.config/kitty/kitty.conf 2>/dev/null | awk '{$1="";print substr($0,2)}')"
+}
+
+# fzf önizlemesi: fontun stilleri ve dosyası
+onizleme_komutu='f={}; echo "── $f ──"; echo; fc-list "$f" style file 2>/dev/null | sed "s|:| → |" | head -12'
+
+font_sec() {
+    local desen="$1" baslik_="$2"
+    font_listesi "$desen" | ara "$baslik_ · ↵ seç · esc vazgeç" "$onizleme_komutu"
+}
+
+boyut_sor() {
+    local varsayilan="$1" b
+    b=$(giris_al "Boyut (pt)" "$varsayilan")
+    [[ "$b" =~ ^[0-9]+$ ]] || b="$varsayilan"
+    printf '%s' "$b"
+}
+
+uygula() {
+    local anahtar="$1" ad="$2" boyut="$3" etiket="$4"
+    gsettings set org.gnome.desktop.interface "$anahtar" "$ad $boyut"
+    basari "$etiket: $ad $boyut"
+}
+
+# ── CLI yolu (script olarak da kullanılabilir) ────────────────────
+case "${1:-}" in
+  liste)
+    baslik "Fontlar" "󰛖" "kurulu fontlar"
+    baslikcik "Monospace"
+    font_listesi ":spacing=100" | head -40 | sed "s/^/   ${C_SOLUK}󰅂${TUI_SIFIR} /"
+    mevcut_durum
+    exit 0 ;;
+  ayarla)
+    ad="${2:-}"; [ -z "$ad" ] && { hata "Kullanım: os-font ayarla \"Font Adı\" [boyut]"; exit 1; }
+    fc-list "$ad" 2>/dev/null | grep -q . || { hata "'$ad' bulunamadı"; exit 1; }
+    uygula monospace-font-name "$ad" "${3:-11}" "monospace"
+    exit 0 ;;
+  arayuz)
+    ad="${2:-}"; [ -z "$ad" ] && { hata "Kullanım: os-font arayuz \"Font Adı\" [boyut]"; exit 1; }
+    fc-list "$ad" 2>/dev/null | grep -q . || { hata "'$ad' bulunamadı"; exit 1; }
+    uygula font-name "$ad" "${3:-11}" "arayüz"
+    exit 0 ;;
+  -h|--help)
+    cat <<'H'
+Kullanım:
+  os-font                        etkileşimli menü
+  os-font liste                  fontları ve mevcut ayarı göster
+  os-font ayarla "Ad" [boyut]    monospace fontu değiştir
+  os-font arayuz "Ad" [boyut]    arayüz fontunu değiştir
+H
+    exit 0 ;;
+esac
+
+# ── Etkileşimli menü ──────────────────────────────────────────────
+giris "Fontlar" "󰛖" "sistem yazı tiplerini değiştir"
+mevcut_durum
+echo
+
+while true; do
+    s=$(secim "Ne değiştirelim?" \
+        "󰗧  Monospace font (terminal, kod)" \
+        "󰊄  Arayüz fontu (menüler, başlıklar)" \
+        "󰈙  Belge fontu" \
+        "󰋼  Mevcut ayarları göster" \
+        "󰍃  Çık")
+    case "$s" in
+        *"Monospace"*)
+            ad=$(font_sec ":spacing=100" "Monospace font")
+            [ -z "$ad" ] && { bilgi "Vazgeçildi"; echo; continue; }
+            uygula monospace-font-name "$ad" "$(boyut_sor 11)" "monospace"
+            bilgi "kitty için ayrıca: ~/.config/kitty/kitty.conf → font_family" ;;
+        *"Arayüz"*)
+            ad=$(font_sec "" "Arayüz fontu")
+            [ -z "$ad" ] && { bilgi "Vazgeçildi"; echo; continue; }
+            uygula font-name "$ad" "$(boyut_sor 11)" "arayüz" ;;
+        *"Belge"*)
+            ad=$(font_sec "" "Belge fontu")
+            [ -z "$ad" ] && { bilgi "Vazgeçildi"; echo; continue; }
+            uygula document-font-name "$ad" "$(boyut_sor 11)" "belge" ;;
+        *"Mevcut"*) mevcut_durum ;;
+        *"Çık"|"") break ;;
+    esac
+    echo
+done
+kapanis

@@ -1,0 +1,25 @@
+{
+  "theme": {
+    "enableTerm": true,
+    "enableBtop": true,
+    "enableNvtop": true,
+    "enableChromium": true,
+    "enableWarp": false,
+    "enableHypr": true,
+    "enableGtk": true,
+    "enableQt": false,
+    "enableHtop": false,
+    "enableCava": false,
+    "enableFuzzel": false,
+    "enableDiscord": false,
+    "enableSpicetify": false,
+    "enableZed": false,
+    "enablePandora": false,
+    "postHook": [
+      "@HOME@/.local/bin/omarchy-suse/os-kitty-tema",
+      "@HOME@/.local/bin/omarchy-suse/os-kontrol --ikonlar",
+      "hyprctl reload"
+    ],
+    "iconTheme": "Adwaita"
+  }
+}

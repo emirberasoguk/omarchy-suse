@@ -1,0 +1,82 @@
+#!/bin/bash
+# Ekrandan metin (OCR) ve QR kodu okuma.
+# Ekran görüntüsü / kayıt / renk seçici caelestia'da zaten var — burada yok.
+#
+# Akış: slurp ile bölge seç → grim ile yakala → tesseract/zbarimg ile çöz
+#       → panoya kopyala → bildirim göster
+
+set -uo pipefail
+
+bildir() { notify-send -a "Yakala" "$1" "${2:-}" 2>/dev/null || echo "$1: ${2:-}"; }
+
+gerekli() {
+    local eksik=()
+    for k in "$@"; do command -v "$k" >/dev/null 2>&1 || eksik+=("$k"); done
+    if (( ${#eksik[@]} )); then
+        bildir "Eksik araç" "${eksik[*]} kurulu değil"
+        echo "Eksik: ${eksik[*]}" >&2
+        echo "Kurulum: sudo zypper install tesseract-ocr tesseract-ocr-traineddata-tur tesseract-ocr-traineddata-eng zbar" >&2
+        return 1
+    fi
+}
+
+bolge_yakala() {
+    local hedef="$1"
+    local alan
+    alan=$(slurp -d 2>/dev/null) || { echo "iptal"; return 1; }
+    [[ -z $alan ]] && { echo "iptal"; return 1; }
+    grim -g "$alan" "$hedef" 2>/dev/null
+}
+
+ocr() {
+    gerekli tesseract grim slurp wl-copy || return 1
+    local diller="${1:-tur+eng}"
+    local tmp; tmp=$(mktemp --suffix=.png)
+    bolge_yakala "$tmp" || { rm -f "$tmp"; return 1; }
+
+    local metin
+    metin=$(tesseract "$tmp" - -l "$diller" 2>/dev/null | sed '/^[[:space:]]*$/d')
+    rm -f "$tmp"
+
+    if [[ -z ${metin//[[:space:]]/} ]]; then
+        bildir "Metin bulunamadı" "Seçilen alanda okunabilir yazı yok"
+        return 1
+    fi
+    printf '%s' "$metin" | wl-copy
+    local onizleme=${metin:0:80}
+    bildir "Metin panoya kopyalandı" "${onizleme}$([ ${#metin} -gt 80 ] && echo '…')"
+    printf '%s\n' "$metin"
+}
+
+qr() {
+    gerekli zbarimg grim slurp wl-copy || return 1
+    local tmp; tmp=$(mktemp --suffix=.png)
+    bolge_yakala "$tmp" || { rm -f "$tmp"; return 1; }
+
+    local sonuc
+    sonuc=$(zbarimg --quiet --raw "$tmp" 2>/dev/null)
+    rm -f "$tmp"
+
+    if [[ -z ${sonuc//[[:space:]]/} ]]; then
+        bildir "QR bulunamadı" "Seçilen alanda okunabilir kod yok"
+        return 1
+    fi
+    printf '%s' "$sonuc" | wl-copy
+    bildir "QR panoya kopyalandı" "${sonuc:0:80}"
+    printf '%s\n' "$sonuc"
+}
+
+case "${1:-}" in
+    ocr|metin)  shift; ocr "${1:-tur+eng}" ;;
+    qr|kod)     qr ;;
+    *)
+        cat <<EOF
+Kullanım:
+  os-yakala ocr [diller]   ekrandan metin oku (varsayılan: tur+eng)
+  os-yakala qr             ekrandan QR kodu oku
+
+Ekran görüntüsü, kayıt ve renk seçici caelestia'da:
+  Print / Shift+Print · > menüsünden · Super+U (utilities)
+EOF
+        ;;
+esac

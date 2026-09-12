@@ -1,0 +1,52 @@
+#!/bin/bash
+# Pencere ve düzen anahtarları (Omarchy'nin hyprland-window-* ailesi).
+#
+# NOT: Hyprland 0.56 Lua yapılandırmasında `hyprctl keyword` çalışmıyor
+# ("keyword can't work with non-legacy parsers. Use eval."). Çalışma
+# zamanında ayar değiştirmenin doğru yolu `hyprctl eval 'hl.config{...}'`.
+set -uo pipefail
+
+bildir() { command -v notify-send >/dev/null 2>&1 && notify-send "$@" >/dev/null 2>&1; return 0; }
+ayarla() { hyprctl eval "$1" >/dev/null 2>&1; }
+dispatch() { hyprctl dispatch "$1" >/dev/null 2>&1; }
+
+# css alanı "8 8 8 8" biçiminde; ilk sayıyı al
+gaps_out() { hyprctl getoption general:gaps_out -j 2>/dev/null | jq -r '.css' | awk '{print $1}'; }
+opaklik()  { hyprctl getoption decoration:active_opacity -j 2>/dev/null | jq -r '.float'; }
+
+case "${1:-}" in
+  seffaflik)
+    # 1.0 (opak) ↔ 0.92/0.85 (şeffaf) arasında geçiş
+    if [ "$(opaklik)" = "1.000000" ]; then
+        ayarla 'hl.config({ decoration = { active_opacity = 0.92, inactive_opacity = 0.85 } })'
+        bildir -a "Pencere" "Şeffaflık açık"
+    else
+        ayarla 'hl.config({ decoration = { active_opacity = 1.0, inactive_opacity = 1.0 } })'
+        bildir -a "Pencere" "Şeffaflık kapalı"
+    fi ;;
+  bosluk)
+    if [ "$(gaps_out)" = "0" ]; then
+        ayarla 'hl.config({ general = { gaps_in = 4, gaps_out = 8 } })'
+        bildir -a "Pencere" "Boşluklar açık"
+    else
+        ayarla 'hl.config({ general = { gaps_in = 0, gaps_out = 0 } })'
+        bildir -a "Pencere" "Boşluklar kapalı"
+    fi ;;
+  tamekran) dispatch 'hl.dsp.window.fullscreen({ mode = 1 })' ;;   # döşeli tam ekran
+  yuzer)    dispatch 'hl.dsp.window.float({ action = "toggle" })' ;;
+  duzen)    dispatch 'hl.dsp.layout("togglesplit")' ;;
+  durum)
+    echo "  opaklık   : $(opaklik)"
+    echo "  gaps_out  : $(gaps_out)" ;;
+  *)
+    cat <<'H'
+Kullanım: os-pencere <komut>
+  seffaflik   pencere şeffaflığını aç/kapa (1.0 ↔ 0.92/0.85)
+  bosluk      pencere boşluklarını aç/kapa (gaps 8/4 ↔ 0)
+  tamekran    döşeli tam ekran
+  yuzer       yüzer/döşeli geçiş
+  duzen       bölme yönünü çevir
+  durum       mevcut değerleri göster
+H
+    ;;
+esac

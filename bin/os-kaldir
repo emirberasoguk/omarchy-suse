@@ -1,0 +1,162 @@
+#!/bin/bash
+# Genel kaldırma aracı — web uygulaması, sistem paketi, flatpak, AppImage.
+# Kaldırma geri alınamaz bir iş: her adımda ne silineceği gösterilir ve
+# açık onay istenir. Varsayılan cevap her zaman "hayır".
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+DESKTOP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+
+# ── Web uygulamaları ──────────────────────────────────────────────
+# Web app = Exec satırında "--app=" geçen .desktop dosyası
+web_kaldir() {
+    local -a dosyalar
+    mapfile -t dosyalar < <(grep -l -- "--app=" "$DESKTOP_DIR"/*.desktop 2>/dev/null || true)
+    if (( ${#dosyalar[@]} == 0 )); then
+        bilgi "Kurulu web uygulaması yok"; return 0
+    fi
+
+    local -a satirlar=() f ad url
+    for f in "${dosyalar[@]}"; do
+        ad=$(grep -m1 '^Name=' "$f" | cut -d= -f2-)
+        url=$(grep -m1 '^Exec=' "$f" | grep -oE 'https?://[^"]*' | head -1)
+        satirlar+=("$(printf '%-30s  %s' "$ad" "$url")")
+    done
+
+    local secilen
+    secilen=$(printf '%s\n' "${satirlar[@]}" | ara "Kaldırılacak web uygulaması · ↵ seç · esc vazgeç")
+    [ -z "$secilen" ] && { bilgi "Vazgeçildi"; return 0; }
+
+    # Seçilen satırın indeksini bul
+    local i hedef=""
+    for i in "${!satirlar[@]}"; do
+        [ "${satirlar[$i]}" = "$secilen" ] && { hedef="${dosyalar[$i]}"; break; }
+    done
+    [ -z "$hedef" ] && { hata "Eşleşme bulunamadı"; return 1; }
+
+    ad=$(grep -m1 '^Name=' "$hedef" | cut -d= -f2-)
+    local ikon; ikon=$(grep -m1 '^Icon=' "$hedef" | cut -d= -f2-)
+
+    baslikcik "Silinecek dosyalar"
+    printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$hedef"
+    [ -f "$ICON_DIR/$ikon.png" ] && printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$ICON_DIR/$ikon.png"
+    echo
+
+    if onay "'$ad' kaldırılsın mı?"; then
+        rm -f "$hedef"
+        [ -f "$ICON_DIR/$ikon.png" ] && rm -f "$ICON_DIR/$ikon.png"
+        update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+        basari "'$ad' kaldırıldı"
+    else
+        bilgi "Vazgeçildi"
+    fi
+}
+
+# ── Sistem paketi ─────────────────────────────────────────────────
+paket_kaldir() {
+    local p; p=$(giris_al "Kaldırılacak paket adı")
+    [ -z "$p" ] && { bilgi "Vazgeçildi"; return 0; }
+
+    if ! rpm -q "$p" >/dev/null 2>&1; then
+        uyari "'$p' kurulu değil"
+        local benzer
+        benzer=$(zypper --no-refresh se -i "$p" 2>/dev/null | tail -n +5 \
+                 | awk -F'|' '{gsub(/^ +| +$/,"",$2); if($2!="") print $2}' | head -10)
+        if [ -n "$benzer" ]; then
+            baslikcik "Kurulu benzer paketler"
+            printf '%s\n' "$benzer" | sed "s/^/   ${C_SOLUK}·${TUI_SIFIR} /"
+        fi
+        return 0
+    fi
+
+    baslikcik "Bu paketi ne kullanıyor"
+    bekle "bağımlılıklar kontrol ediliyor" \
+        bash -c "zypper --no-refresh se --requires-pkg '$p' 2>/dev/null | tail -n +5 | head -8 > /tmp/.os-kaldir-dep"
+    if [ -s /tmp/.os-kaldir-dep ]; then
+        awk -F'|' '{gsub(/^ +| +$/,"",$2); if($2!="") print "   · "$2}' /tmp/.os-kaldir-dep
+    else
+        bilgi "bağımlı paket görünmüyor"
+    fi
+    rm -f /tmp/.os-kaldir-dep
+    echo
+    bilgi "zypper ne silineceğini gösterecek, son onay orada"
+    sudo zypper remove --clean-deps "$p"
+}
+
+# ── Flatpak ───────────────────────────────────────────────────────
+flatpak_kaldir() {
+    command -v flatpak >/dev/null || { uyari "flatpak kurulu değil"; return 0; }
+    local -a satirlar
+    mapfile -t satirlar < <(flatpak list --app --columns=application,name,size 2>/dev/null)
+    if (( ${#satirlar[@]} == 0 )); then bilgi "Kurulu flatpak yok"; return 0; fi
+
+    local secilen
+    secilen=$(printf '%s\n' "${satirlar[@]}" \
+        | ara "Kaldırılacak flatpak · ↵ seç" 'flatpak info {1} 2>/dev/null | head -20')
+    [ -z "$secilen" ] && { bilgi "Vazgeçildi"; return 0; }
+
+    local app; app=$(awk '{print $1}' <<<"$secilen")
+    if onay "'$app' kaldırılsın mı?"; then
+        flatpak uninstall -y "$app" && basari "$app kaldırıldı"
+        if onay "Kullanılmayan runtime'lar da temizlensin mi?"; then
+            bekle "runtime'lar temizleniyor" flatpak uninstall --unused -y
+            basari "temizlendi"
+        fi
+    else
+        bilgi "Vazgeçildi"
+    fi
+}
+
+# ── AppImage ──────────────────────────────────────────────────────
+appimage_kaldir() {
+    local dizin="$HOME/Applications"
+    local -a dosyalar
+    mapfile -t dosyalar < <(find "$dizin" -maxdepth 1 -iname "*.AppImage" 2>/dev/null || true)
+    if (( ${#dosyalar[@]} == 0 )); then bilgi "Kurulu AppImage yok"; return 0; fi
+
+    local secilen
+    secilen=$(printf '%s\n' "${dosyalar[@]}" | ara "Kaldırılacak AppImage · ↵ seç" 'ls -lh {}')
+    [ -z "$secilen" ] && { bilgi "Vazgeçildi"; return 0; }
+
+    local temel; temel=$(basename "${secilen%.AppImage}")
+    baslikcik "Silinecek"
+    printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$secilen"
+    local d
+    for d in "$DESKTOP_DIR"/*.desktop; do
+        grep -q "$secilen" "$d" 2>/dev/null && printf '   %s%s%s %s\n' "$C_HATA" "󰩹" "$TUI_SIFIR" "$d"
+    done
+    echo
+    if onay "'$temel' kaldırılsın mı?"; then
+        rm -f "$secilen"
+        for d in "$DESKTOP_DIR"/*.desktop; do
+            grep -q "$secilen" "$d" 2>/dev/null && rm -f "$d"
+        done
+        update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+        basari "'$temel' kaldırıldı"
+    else
+        bilgi "Vazgeçildi"
+    fi
+}
+
+# ── Menü ──────────────────────────────────────────────────────────
+giris "Kaldır" "󰩹" "geri alınamaz — her adımda onay istenir"
+
+while true; do
+    s=$(secim "Ne kaldırılacak?" \
+        "󰖟  Web uygulaması" \
+        "󰏖  Sistem paketi (zypper)" \
+        "󰏗  Flatpak uygulaması" \
+        "󰏔  AppImage" \
+        "󰍃  Çık")
+    case "$s" in
+        *"Web uygulaması")   web_kaldir ;;
+        *"Sistem paketi"*)   paket_kaldir ;;
+        *"Flatpak"*)         flatpak_kaldir ;;
+        *"AppImage")         appimage_kaldir ;;
+        *"Çık"|"")           break ;;
+    esac
+    echo
+done
+kapanis

@@ -1,0 +1,17 @@
+[Unit]
+Description=omarchy-suse kontrol tepsisi
+PartOf=hyprland-session.target
+After=hyprland-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchy-suse/os-kontrol
+Restart=on-failure
+RestartSec=3
+# Tepsi ikonu seti: dunya (varsayılan) · cip · cark
+#Environment=OS_KONTROL_IKON=cip
+# hotspotd'yi kaynaktan geliştiriyorsan:
+#Environment=HOTSPOTD_KAYNAK=%h/kod/hotspotd
+
+[Install]
+WantedBy=hyprland-session.target

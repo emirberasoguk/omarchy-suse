@@ -1,0 +1,41 @@
+#!/bin/bash
+# Panodaki içeriği dosyaya kaydeder — türünü kendi belirler.
+# (Omarchy'nin clipboard-paste-file'ı tersini yapıyor: dosyayı panoya koyuyor.)
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+HEDEF_DIZIN="${OS_PANO_DIZIN:-$HOME/Downloads}"
+mkdir -p "$HEDEF_DIZIN"
+
+turler=$(wl-paste --list-types 2>/dev/null)
+[ -z "$turler" ] && { bildir -a "Pano" "Pano boş" 2>/dev/null; exit 1; }
+
+zaman=$(date +%Y%m%d-%H%M%S)
+sec_tur=""; uzanti=""
+for t in image/png image/jpeg image/gif image/webp application/pdf text/html text/plain; do
+    if grep -qx "$t" <<<"$turler"; then
+        sec_tur="$t"
+        case "$t" in
+            image/png) uzanti=png ;; image/jpeg) uzanti=jpg ;;
+            image/gif) uzanti=gif ;; image/webp) uzanti=webp ;;
+            application/pdf) uzanti=pdf ;; text/html) uzanti=html ;;
+            *) uzanti=txt ;;
+        esac
+        break
+    fi
+done
+[ -z "$sec_tur" ] && { sec_tur=$(head -1 <<<"$turler"); uzanti=bin; }
+
+hedef="$HEDEF_DIZIN/pano-$zaman.$uzanti"
+wl-paste --type "$sec_tur" > "$hedef" 2>/dev/null
+
+if [ -s "$hedef" ]; then
+    boyut=$(du -h "$hedef" | cut -f1)
+    # Tam yolu göster — kullanıcı dosyayı bulamıyordu
+    bildir -a "Pano" "Kaydedildi → $HEDEF_DIZIN" "$(basename "$hedef") · $boyut · $sec_tur"
+    printf '%s\n' "$hedef"
+    command -v wl-copy >/dev/null && printf '%s' "$hedef" | wl-copy --primary 2>/dev/null || true
+else
+    rm -f "$hedef"
+    bildir -a "Pano" "Kaydedilemedi" 2>/dev/null; exit 1
+fi

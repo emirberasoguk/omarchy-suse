@@ -1,0 +1,22 @@
+#!/bin/bash
+# Pencere zaten açıksa ona odaklan, değilse başlat.
+# Her uygulamaya ayrı çalışma alanı açan iş akışı için: aynı uygulamanın
+# ikinci kopyasını açmak yerine mevcut olana gider.
+#
+# Kullanım: os-ac-odaklan <desen> [başlatma-komutu]
+#   desen: pencere class'ı veya başlığında aranacak kelime
+# Örnek:  os-ac-odaklan brave brave-origin
+set -uo pipefail
+
+desen="${1:-}"
+[ -z "$desen" ] && { echo "Kullanım: os-ac-odaklan <desen> [komut]" >&2; exit 1; }
+komut="${2:-$desen}"
+
+adres=$(hyprctl clients -j 2>/dev/null | jq -r --arg p "$desen" '
+    .[] | select((.class // "" | test($p; "i")) or (.title // "" | test($p; "i"))) | .address' | head -1)
+
+if [ -n "$adres" ]; then
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$adres\" })" >/dev/null 2>&1
+else
+    setsid $komut >/dev/null 2>&1 &
+fi

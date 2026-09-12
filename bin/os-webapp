@@ -1,0 +1,134 @@
+#!/bin/bash
+# Web uygulaması oluşturucu — Omarchy'nin omarchy-webapp-install uyarlaması.
+# Kaynak: references/01-omarchy/omarchy/bin/omarchy-webapp-install
+# Farklar: Türkçe arayüz, os-tui.sh katmanı, Brave varsayılan.
+#
+# Omarchy'den korunan sağlamlıklar:
+#   - apple-touch-icon → /apple-touch-icon.png → Google favicon indirme zinciri
+#   - .desktop dosyasına enjeksiyona karşı kaçış (yeni satır, tab, backslash)
+#   - Exec argüman tırnaklaması (freedesktop Exec spec)
+#   - Yalnızca http/https, boşluk içeren URL reddi
+
+set -euo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+DESKTOP_DIR="$HOME/.local/share/applications"
+
+guvenli_ad() {
+    printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' \
+        | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//'
+}
+
+url_normalize() {
+    local u=$1
+    [[ ! $u =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && u="https://$u"
+    printf '%s' "$u"
+}
+
+url_dogrula() {
+    local u=$1
+    if [[ $u =~ [[:space:]] ]]; then
+        hata "URL boşluk içeremez"; exit 1
+    fi
+    if [[ ! ${u,,} =~ ^https?:// ]]; then
+        hata "URL http veya https olmalı"; exit 1
+    fi
+    return 0
+}
+
+ikon_indir() {
+    curl -fsSL --max-time 10 -o "$2" "$1" 2>/dev/null &&
+        [[ -s $2 && $(file -b --mime-type "$2") == image/* ]]
+}
+
+# Sitenin kendi ikonunu bul: apple-touch-icon → /apple-touch-icon.png → Google
+site_ikonu_getir() {
+    local site="$1" hedef="$2" kok sayfa ikon
+    kok=$(sed -E 's|^(https?://[^/]+).*|\1|' <<<"$site")
+    sayfa=$(curl -fsSL --max-time 5 "$site" 2>/dev/null | head -c 100000 | tr '\n' ' ')
+    ikon=$(grep -oiE "<link[^>]*rel=[\"'][^\"']*apple-touch-icon[^\"']*[\"'][^>]*>" <<<"$sayfa" \
+        | grep -oiE "href=[\"'][^\"']+" | head -1 | sed -E "s/^href=[\"']//")
+    case $ikon in
+        http://*|https://*) ;;
+        //*)  ikon="https:$ikon" ;;
+        /*)   ikon="$kok$ikon" ;;
+        ?*)   ikon="$kok/$ikon" ;;
+    esac
+    { [[ -n $ikon ]] && ikon_indir "$ikon" "$hedef"; } ||
+        ikon_indir "$kok/apple-touch-icon.png" "$hedef" ||
+        ikon_indir "https://www.google.com/s2/favicons?domain=${site}&sz=256" "$hedef"
+}
+
+# .desktop string değeri kaçışı (freedesktop spec) — enjeksiyona karşı
+desktop_kacis() {
+    local v="$1"
+    v=${v//\\/\\\\}; v=${v//$'\t'/\\t}; v=${v//$'\r'/\\r}; v=${v//$'\n'/\\n}
+    if [[ $v == " "* ]]; then v="\\s${v# }"; fi
+    printf '%s' "$v"
+}
+
+desktop_exec_arg() {
+    printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/`/\\`/g' -e 's/\$/\\$/g' -e 's/%/%%/g')"
+}
+
+# ── Tarayıcı seçimi ────────────────────────────────────────────────
+TARAYICI=""
+for b in brave-origin brave-origin-stable brave-browser brave chromium google-chrome-stable microsoft-edge-stable; do
+    command -v "$b" >/dev/null && { TARAYICI="$b"; break; }
+done
+if [[ -z $TARAYICI ]]; then hata "chromium tabanlı tarayıcı bulunamadı"; exit 1; fi
+
+# ── Girdi ──────────────────────────────────────────────────────────
+if (( $# >= 2 )); then
+    AD="$1"; URL=$(url_normalize "$2")
+else
+    giris "Web Uygulaması" "󰖟" "bir siteyi masaüstü uygulamasına çevir"
+    bilgi "tarayıcı: $TARAYICI"
+    echo
+    AD=$(giris_al "Uygulama adı  (örn. WhatsApp)")
+    URL=$(giris_al "Adres  (örn. web.whatsapp.com)")
+    URL=$(url_normalize "$URL")
+fi
+
+if [[ -z ${AD:-} || -z ${URL:-} ]]; then hata "Ad ve URL zorunlu"; exit 1; fi
+if [[ $AD == */* ]]; then hata "Ad '/' içeremez"; exit 1; fi
+url_dogrula "$URL"
+
+# ── İkon ───────────────────────────────────────────────────────────
+IKON=$(guvenli_ad "$AD")
+mkdir -p "$ICON_DIR"
+if bekle "sitenin ikonu aranıyor" site_ikonu_getir "$URL" "$ICON_DIR/$IKON.png"; then
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+    basari "ikon bulundu"
+else
+    uyari "ikon bulunamadı, genel ikon kullanılacak"
+    IKON="web-browser"
+fi
+
+# ── .desktop ───────────────────────────────────────────────────────
+mkdir -p "$DESKTOP_DIR"
+DOSYA="$DESKTOP_DIR/$AD.desktop"
+cat > "$DOSYA" <<EOF
+[Desktop Entry]
+Version=1.0
+Name=$(desktop_kacis "$AD")
+Comment=$(desktop_kacis "$AD")
+Exec=$TARAYICI --app=$(desktop_exec_arg "$URL")
+Terminal=false
+Type=Application
+Icon=$(desktop_kacis "$IKON")
+StartupNotify=true
+Categories=Network;
+EOF
+chmod +x "$DOSYA"
+update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+
+echo
+basari "'$AD' oluşturuldu — launcher'da (Super+Space) aratabilirsin"
+printf '   %sTarayıcı%s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$TARAYICI"
+printf '   %sAdres   %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$URL"
+printf '   %sDosya   %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "$DOSYA"
+kapanis
+[ -t 0 ] && [ $# -lt 2 ] && giris_al "kapatmak için ↵" >/dev/null
+true

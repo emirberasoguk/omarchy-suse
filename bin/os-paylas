@@ -1,0 +1,96 @@
+#!/bin/bash
+# Pano / dosya / klasörü LocalSend ile paylaş.
+# NOT: LocalSend flatpak'i yalnızca xdg-download görebiliyor, bu yüzden
+# paylaşılacak her şey önce ~/Downloads/.os-paylas altına sahnelenir
+# (aynı dosya sisteminde hardlink → yer kaplamaz, değilse kopyalanır).
+set -uo pipefail
+
+# notify-send yoksa sessizce geç (libnotify-tools kurulu olmayabilir)
+bildir() { command -v notify-send >/dev/null 2>&1 && notify-send "$@" >/dev/null 2>&1; return 0; }
+
+SAHNE="${XDG_DOWNLOAD_DIR:-$HOME/Downloads}/.os-paylas"
+FLATPAK=0
+if command -v localsend >/dev/null 2>&1; then
+    LS=(localsend)
+elif flatpak info org.localsend.localsend_app >/dev/null 2>&1; then
+    LS=(flatpak run org.localsend.localsend_app); FLATPAK=1
+else
+    bildir -a "Paylaş" "LocalSend kurulu değil" 2>/dev/null
+    echo "LocalSend kurulu değil." >&2; exit 1
+fi
+
+# Dosyayı gerekiyorsa sahneye taşı, erişilebilir yolu yazdır.
+sahnele() {
+    local kaynak="$1"
+    if (( ! FLATPAK )); then printf '%s\n' "$kaynak"; return; fi
+    case "$kaynak" in
+        "${XDG_DOWNLOAD_DIR:-$HOME/Downloads}"/*) printf '%s\n' "$kaynak"; return ;;
+    esac
+    mkdir -p "$SAHNE"
+    local hedef="$SAHNE/$(basename "$kaynak")"
+    ln -f "$kaynak" "$hedef" 2>/dev/null || cp -f "$kaynak" "$hedef" || return 1
+    printf '%s\n' "$hedef"
+}
+
+gonder() {
+    local -a yollar=()
+    local y s
+    for y in "$@"; do
+        [ -e "$y" ] || { echo "Yok: $y" >&2; continue; }
+        s=$(sahnele "$y") && yollar+=("$s")
+    done
+    (( ${#yollar[@]} )) || { bildir -a "Paylaş" "Gönderilecek bir şey yok" 2>/dev/null; exit 1; }
+    setsid "${LS[@]}" "${yollar[@]}" >/dev/null 2>&1 &
+    bildir -a "Paylaş" "LocalSend açılıyor (${#yollar[@]} öğe)" 2>/dev/null
+}
+
+case "${1:-}" in
+  pano)
+    tur=$(wl-paste --list-types 2>/dev/null | head -1)
+    case "$tur" in
+        image/png)  uzanti=png ;;
+        image/jpeg) uzanti=jpg ;;
+        *)          uzanti=txt ;;
+    esac
+    mkdir -p "$SAHNE"
+    tmp="$SAHNE/pano-$(date +%Y%m%d-%H%M%S).$uzanti"
+    wl-paste > "$tmp" 2>/dev/null
+    [ -s "$tmp" ] || { rm -f "$tmp"; bildir -a "Paylaş" "Pano boş" 2>/dev/null; exit 1; }
+    gonder "$tmp"
+    ;;
+  dosya)
+    shift
+    if (( $# == 0 )); then
+        secim=$(zenity --file-selection --multiple --separator=$'\n' \
+                --title="Paylaşılacak dosyalar" 2>/dev/null) || exit 0
+        mapfile -t dosyalar <<<"$secim"
+    else
+        dosyalar=("$@")
+    fi
+    gonder "${dosyalar[@]}"
+    ;;
+  klasor)
+    shift
+    k="${1:-}"
+    [ -z "$k" ] && { k=$(zenity --file-selection --directory \
+                        --title="Paylaşılacak klasör" 2>/dev/null) || exit 0; }
+    [ -d "$k" ] || { echo "Klasör değil: $k" >&2; exit 1; }
+    mkdir -p "$SAHNE"
+    ark="$SAHNE/$(basename "$k").zip"
+    bildir -a "Paylaş" "Klasör zip'leniyor…" 2>/dev/null
+    ( cd "$(dirname "$k")" && zip -qr "$ark" "$(basename "$k")" ) || exit 1
+    gonder "$ark"
+    ;;
+  temizle)
+    rm -rf "$SAHNE" && echo "Sahne temizlendi: $SAHNE"
+    ;;
+  *)
+    cat <<'H'
+Kullanım: os-paylas <pano|dosya|klasor|temizle> [yol...]
+  pano            panodakini gönder
+  dosya [yol...]  dosya gönder (yol verilmezse seçici açılır)
+  klasor [yol]    klasörü zip'leyip gönder
+  temizle         sahneleme klasörünü sil
+H
+    ;;
+esac

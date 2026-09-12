@@ -1,0 +1,151 @@
+#!/bin/bash
+# Birleşik uygulama yöneticisi — zypper + flatpak tek arayüzde.
+# Omarchy'nin omarchy-install-* ailesinin openSUSE karşılığı.
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+# ── Önerilenler ───────────────────────────────────────────────────
+# biçim: ad|kaynak|açıklama    kaynak: zypper | flatpak:<app-id>
+ONERI=(
+    "gamescope|zypper|Oyunlar için mikro-compositor (Steam/Heroic ile)"
+    "protonup-qt|flatpak:net.davidotek.pupgui2|Proton-GE sürüm yöneticisi"
+    "distrobox|zypper|Konteyner içinde başka dağıtımlar"
+    "htop|zypper|btop alternatifi — tema motoru destekliyor"
+    "cava|zypper|Ses görselleştirici — tema motoru destekliyor"
+    "nwg-displays|zypper|Monitör düzeni GUI (Nexus'ta bu sayfa eksik)"
+    "qt6ct|zypper|Qt tema motoru (alternatif yol; şu an gtk3 kullanılıyor)"
+)
+
+kurulu_mu() {
+    local ad="$1" kaynak="$2"
+    if [[ $kaynak == flatpak:* ]]; then
+        flatpak list --app 2>/dev/null | grep -q "${kaynak#flatpak:}"
+    else
+        rpm -q "$ad" >/dev/null 2>&1 || command -v "$ad" >/dev/null 2>&1
+    fi
+}
+
+# ── Arama ─────────────────────────────────────────────────────────
+# İki kaynağı tek listede birleştirip fzf'e önizlemeli veriyoruz.
+arama_yap() {
+    local q="${1:-}"
+    [ -z "$q" ] && q=$(giris_al "Aranacak paket adı")
+    [ -z "$q" ] && return 0
+
+    local gecici; gecici=$(mktemp)
+    # Arama işini ayrı fonksiyona alıyoruz: sorgu değişken olarak geçiyor,
+    # bash -c dizesine gömülmüyor (özel karakterli sorgular kırmasın).
+    OS_SORGU="$q" OS_CIKTI="$gecici" bekle "\"$q\" iki kaynakta aranıyor" \
+        bash -c '
+            zypper --no-refresh se -s "$OS_SORGU" 2>/dev/null | tail -n +5 |
+            awk -F"|" "{gsub(/^ +| +\$/,\"\",\$2); gsub(/^ +| +\$/,\"\",\$4);
+                        if(\$2!=\"\" && \$2!=\"Name\") printf \"zypper\t%s\t%s\n\",\$2,\$4}" |
+            sort -u -k2,2 > "$OS_CIKTI"
+            if command -v flatpak >/dev/null; then
+                flatpak search "$OS_SORGU" --columns=application,version 2>/dev/null |
+                awk -F"\t" "NF>=1 && \$1!=\"\" {printf \"flatpak\t%s\t%s\n\",\$1,\$2}" >> "$OS_CIKTI"
+            fi
+            true'
+
+    if [ ! -s "$gecici" ]; then
+        uyari "\"$q\" için sonuç yok"; rm -f "$gecici"; return 0
+    fi
+
+    local sayi; sayi=$(wc -l < "$gecici")
+    local secilen
+    secilen=$(awk -F'\t' '{printf "%-8s  %-38s  %s\n", $1, $2, $3}' "$gecici" \
+        | ara "$sayi sonuç · ↑↓ gez · ↵ seç · esc çık" \
+              'k={2}; s={1}; if [ "$s" = "flatpak" ]; then flatpak info "$k" 2>/dev/null || flatpak search "$k" 2>/dev/null | head -20; else zypper --no-refresh info "$k" 2>/dev/null | sed -n "1,25p"; fi')
+    rm -f "$gecici"
+    [ -z "$secilen" ] && return 0
+
+    local kaynak ad
+    kaynak=$(awk '{print $1}' <<<"$secilen")
+    ad=$(awk '{print $2}' <<<"$secilen")
+
+    if onay "$ad ($kaynak) kurulsun mu?"; then
+        case "$kaynak" in
+            zypper)  sudo zypper install "$ad" ;;
+            flatpak) flatpak install -y flathub "$ad" ;;
+        esac
+        basari "$ad işlendi"
+    else
+        bilgi "Vazgeçildi"
+    fi
+}
+
+# ── Önerilenler ───────────────────────────────────────────────────
+onerilenler() {
+    baslikcik "Önerilenler"
+    local -a satirlar=()
+    local satir ad kalan kaynak aciklama isaret
+    for satir in "${ONERI[@]}"; do
+        ad="${satir%%|*}"; kalan="${satir#*|}"
+        kaynak="${kalan%%|*}"; aciklama="${kalan#*|}"
+        if kurulu_mu "$ad" "$kaynak"; then isaret="󰗠"; else isaret="󰅂"; fi
+        satirlar+=("$(printf '%s  %-16s %-9s %s' "$isaret" "$ad" "[${kaynak%%:*}]" "$aciklama")")
+    done
+
+    local secilen
+    secilen=$(printf '%s\n' "${satirlar[@]}" | ara "󰗠 kurulu · 󰅂 değil · ↵ seç")
+    [ -z "$secilen" ] && return 0
+
+    ad=$(awk '{print $2}' <<<"$secilen")
+    for satir in "${ONERI[@]}"; do
+        [ "${satir%%|*}" = "$ad" ] || continue
+        kalan="${satir#*|}"; kaynak="${kalan%%|*}"
+        if kurulu_mu "$ad" "$kaynak"; then
+            bilgi "$ad zaten kurulu"; return 0
+        fi
+        onay "$ad kurulsun mu?" || { bilgi "Vazgeçildi"; return 0; }
+        case "$kaynak" in
+            zypper)    sudo zypper install "$ad" ;;
+            flatpak:*) flatpak install -y flathub "${kaynak#flatpak:}" ;;
+        esac
+        basari "$ad kuruldu"
+        return 0
+    done
+}
+
+# ── Güncellenebilirler ────────────────────────────────────────────
+guncelle_kontrol() {
+    baslikcik "Güncellenebilir paketler"
+    local z; z=$(zypper --no-refresh lu 2>/dev/null | tail -n +5 \
+        | awk -F'|' '{gsub(/^ +| +$/,"",$3); if($3!="") print $3}')
+    if [ -n "$z" ]; then
+        printf '%s\n' "$z" | head -15 | sed "s/^/   ${C_ANA}󰏖${TUI_SIFIR} /"
+        local n; n=$(printf '%s\n' "$z" | wc -l)
+        [ "$n" -gt 15 ] && bilgi "… ve $((n - 15)) tane daha"
+    else
+        bilgi "zypper: güncel"
+    fi
+    if command -v flatpak >/dev/null; then
+        local f; f=$(flatpak remote-ls --updates --columns=name 2>/dev/null)
+        [ -n "$f" ] && { echo; printf '%s\n' "$f" | head -8 | sed "s/^/   ${C_UC}󰏗${TUI_SIFIR} /"; } \
+                    || bilgi "flatpak: güncel"
+    fi
+    echo
+    bilgi "Tam güncelleme: launcher → : → Sistem güncelle"
+    echo; giris_al "devam etmek için ↵" >/dev/null
+}
+
+# ── Ana döngü ─────────────────────────────────────────────────────
+giris "Uygulama Yöneticisi" "󰏖" "zypper + flatpak birleşik arama"
+
+while true; do
+    s=$(secim "Ne yapmak istiyorsun?" \
+        "󰍉  Ara ve kur" \
+        "󰓎  Önerilenler" \
+        "󰚰  Güncellenebilirleri göster" \
+        "󰩹  Kaldır" \
+        "󰍃  Çık")
+    case "$s" in
+        *"Ara ve kur")               arama_yap ;;
+        *"Önerilenler")              onerilenler ;;
+        *"Güncellenebilirleri"*)     guncelle_kontrol ;;
+        *"Kaldır")                   exec "$(dirname "$0")/os-kaldir" ;;
+        *"Çık"|"")                   break ;;
+    esac
+    echo
+done
+kapanis

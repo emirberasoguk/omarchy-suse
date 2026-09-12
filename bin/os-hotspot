@@ -1,0 +1,291 @@
+#!/bin/bash
+# os-hotspot — hotspotd'yi masaüstünden sür.
+#
+# hotspotd (github.com/emirberasoguk/hotspotd) her işi root ister; bu script
+# root'u pkexec ile alıyor, yani tepsiden tıklandığında hyprpolkitagent'in
+# grafik şifre kutusu çıkıyor, terminale gerek kalmıyor.
+#
+# DURUMU root olmadan okuyoruz: hotspotd'nin durum dosyası /run/hotspotd
+# 0700 root, yani `hotspotd status` kullanıcı olarak boş döner. Onun yerine
+# `iw dev` bakıyoruz — type AP olan bir arayüz varsa hotspot ayakta ve SSID
+# de orada yazıyor. iw kullanıcıya açık.
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+IW=/usr/sbin/iw
+# İsteğe bağlı: hotspotd kaynak ağacı. Verilirse kurulum/güncelleme buradan
+# yapılır ve menü kurulu sürümün geride kaldığını gösterir.
+KAYNAK="${HOTSPOTD_KAYNAK:-}"
+
+hotspotd_yolu() { command -v hotspotd 2>/dev/null || echo /usr/local/bin/hotspotd; }
+kurulu()        { command -v hotspotd >/dev/null 2>&1; }
+
+# "wlan0<TAB>SSID" — hotspot yoksa boş
+ap_bilgi() {
+    "$IW" dev 2>/dev/null | awk '
+        /^\tInterface /       { iface=$2; ssid="" }
+        /^\t\tssid /          { ssid=substr($0, index($0,$2)) }
+        /^\t\ttype AP$/       { print iface "\t" ssid; exit }'
+}
+ap_acik() { [ -n "$(ap_bilgi)" ]; }
+ap_ssid() { ap_bilgi | cut -f2; }
+
+kok() { pkexec "$(hotspotd_yolu)" "$@"; }
+
+son_satir() { printf '%s' "$1" | grep -v '^[[:space:]]*$' | tail -1 | sed 's/^ *//'; }
+
+kurulu_surum() { hotspotd --version 2>/dev/null | awk '{print $NF}'; }
+kaynak_surum() {
+    [ -f "$KAYNAK/hotspotd/__init__.py" ] || return 1
+    sed -n 's/^__version__ *= *"\(.*\)"/\1/p' "$KAYNAK/hotspotd/__init__.py"
+}
+
+kurulum_uyar() {
+    hata "hotspotd kurulu değil"
+    if [ -d "$KAYNAK" ]; then
+        bilgi "kaynak burada: $KAYNAK"
+        if onay "Şimdi kurulsun mu? (test + make install)" evet; then
+            kur_sistem && basari "kuruldu (sürüm $(kurulu_surum))" && return 0
+        fi
+    else
+        bilgi "kur:  git clone https://github.com/emirberasoguk/hotspotd && cd hotspotd && sudo make install"
+    fi
+    return 1
+}
+
+# ── Eylemler ──────────────────────────────────────────────────────
+ac() {
+    if ap_acik; then bilgi "hotspot zaten açık: $(ap_ssid)"; return 0; fi
+    local cikti rc
+    cikti=$(kok up 2>&1); rc=$?
+    if [ $rc -eq 0 ]; then
+        printf '%s\n' "$cikti"
+        bildir -a "Hotspot" "Açıldı" "$(ap_ssid)"
+        basari "hotspot açıldı: $(ap_ssid)"
+    else
+        printf '%s\n' "$cikti" >&2
+        # hotspotd'nin KENDİ mesajını gösteriyoruz. Metne göre dallanmıyoruz:
+        # hotspotd güncellendikçe cümleler değişir, eşleşme sessizce bozulurdu.
+        bildir -a "Hotspot" "Açılamadı" "$(son_satir "$cikti")"
+        hata "açılamadı — $(son_satir "$cikti")"
+        return 1
+    fi
+}
+
+kapat() {
+    if ! ap_acik; then bilgi "hotspot zaten kapalı"; return 0; fi
+    if kok down; then
+        bildir -a "Hotspot" "Kapatıldı"
+        basari "hotspot kapatıldı"
+    else
+        bildir -a "Hotspot" "Kapatılamadı"
+        hata "kapatılamadı"; return 1
+    fi
+}
+
+degistir() { if ap_acik; then kapat; else ac; fi; }
+
+durum() {
+    baslikcik "Sürüm"
+    local ks kys
+    ks=$(kurulu_surum); kys=$(kaynak_surum)
+    printf '   %skurulu  %s  %s\n' "$C_SOLUK" "$TUI_SIFIR" "${ks:-kurulu değil}"
+    if [ -n "$kys" ]; then
+        printf '   %skaynak  %s  %s%s\n' "$C_SOLUK" "$TUI_SIFIR" "$kys" \
+            "$([ "$ks" != "$kys" ] && printf '   %s← güncelleme var (os-hotspot guncelle)%s' "$C_IKI" "$TUI_SIFIR")"
+    fi
+
+    baslikcik "Durum"
+    if ap_acik; then
+        local iface ssid
+        IFS=$'\t' read -r iface ssid <<<"$(ap_bilgi)"
+        printf '   %sdurum   %s  %saçık%s\n'   "$C_SOLUK" "$TUI_SIFIR" "$C_ANA" "$TUI_SIFIR"
+        printf '   %sağ adı  %s  %s\n'          "$C_SOLUK" "$TUI_SIFIR" "$ssid"
+        printf '   %sarayüz  %s  %s\n'          "$C_SOLUK" "$TUI_SIFIR" "$iface"
+        # Ayrıntı (istemciler, NAT, süre) yalnız root okuyabiliyor.
+        echo
+        kok status
+    else
+        printf '   %sdurum   %s  kapalı\n' "$C_SOLUK" "$TUI_SIFIR"
+    fi
+}
+
+kur() {
+    local ssid
+    bilgi "Hotspot adını yaz (kayıtlı profil olarak saklanacak)"
+    ssid=$(giris_al "ör. BenimHotspot")
+    [ -z "$ssid" ] && { uyari "vazgeçildi"; return 1; }
+    bilgi "Parolayı hotspotd soracak (en az 8 karakter)"
+    # Parolayı komut satırına KOYMUYORUZ; ps'te görünmesin diye hotspotd'nin
+    # kendi sorusunu kullanıyoruz — pkexec terminali koruduğu için çalışıyor.
+    if kok up "$ssid" --save; then
+        bildir -a "Hotspot" "Kuruldu ve açıldı" "$ssid"
+        basari "kaydedildi — bundan sonra tepsiden tek tıkla açılır"
+    else
+        hata "kurulamadı — 'os-hotspot tani' çıktısına bak"; return 1
+    fi
+}
+
+# ── Güncelleme ────────────────────────────────────────────────────
+# hotspotd geliştirilen bir proje: kaynak ağacı değişince sistemdeki kopya
+# eskiyor. `make install` dosyaları KOPYALIYOR, kaynağa bağlamıyor — yani
+# her değişiklikten sonra yeniden kurmak gerekiyor. Bunu tek komuta indiriyoruz.
+#
+# Neden kaynağa symlink/PYTHONPATH ile bağlamıyoruz: hotspotd'yi pkexec root
+# olarak çalıştırıyor. Kod kullanıcının yazabildiği bir dizinden koşarsa, o
+# dizine yazabilen her şey root olur. Kurulu kopya bu yüzden /usr/local'da.
+kur_sistem() {
+    [ -d "$KAYNAK" ] || { hata "kaynak yok — HOTSPOTD_KAYNAK=/yol/hotspotd ver"; return 1; }
+    bekle "testler koşuyor" make -C "$KAYNAK" test || { hata "testler geçmedi — kurulmadı"; return 1; }
+    pkexec make -C "$KAYNAK" install || { hata "kurulum başarısız"; return 1; }
+    hash -r
+    return 0
+}
+
+guncelle() {
+    [ -d "$KAYNAK" ] || { hata "kaynak ağacı yok — HOTSPOTD_KAYNAK=/yol/hotspotd ver"; return 1; }
+    local onceki; onceki=$(kurulu_surum)
+
+    if [ -z "$(git -C "$KAYNAK" status --porcelain 2>/dev/null)" ]; then
+        # Ağaç temiz: uzaktakini almayı dene. Kirliyse dokunmuyoruz —
+        # o durumda "güncelle" zaten "üstünde çalıştığım hâli kur" demek.
+        bekle "GitHub'dan çekiliyor" git -C "$KAYNAK" pull --ff-only \
+            || uyari "çekilemedi — yerel ağaç kurulacak"
+    else
+        uyari "kaynak ağacında kaydedilmemiş değişiklik var — o hâli kuruyorum"
+    fi
+
+    kur_sistem || return 1
+    local simdi; simdi=$(kurulu_surum)
+    if [ "$onceki" = "$simdi" ]; then basari "kuruldu (sürüm $simdi)"
+    else basari "güncellendi: ${onceki:-yok} → $simdi"; fi
+    bildir -a "Hotspot" "hotspotd güncellendi" "sürüm $simdi"
+    echo
+    dogrula
+}
+
+# ── Sözleşme denetimi ─────────────────────────────────────────────
+# os-hotspot'un hotspotd'den beklediği HER ŞEY burada tek tek sınanıyor.
+# hotspotd güncellenince entegrasyon sessizce bozulmasın diye `guncelle`
+# bunu kendiliğinden çalıştırıyor.
+dogrula() {
+    local sorun=0 yardim ks
+    baslikcik "Doğrulama"
+
+    # DİKKAT: "komut; _dg 'etiket' $?" YAZMA. Etiketin içindeki $(...) önce
+    # çalışıp $?'i eziyor ve her madde 'geçti' görünüyor. Testi komut olarak
+    # veriyoruz, çalıştırmayı _dg yapıyor.
+    _dg() { local etiket="$1"; shift
+            if "$@" >/dev/null 2>&1; then basari "$etiket"
+            else hata "$etiket"; sorun=$((sorun+1)); fi; }
+
+    _dg "hotspotd kurulu  ($(hotspotd_yolu))" kurulu
+    if kurulu; then
+        ks=$(kurulu_surum)
+        _dg "hotspotd --version  →  ${ks:-?}" test -n "$ks"
+        yardim=$(hotspotd --help 2>&1)
+        local k
+        for k in up down status doctor enable disable; do
+            _dg "alt komut: $k" grep -qw -- "$k" <<<"$yardim"
+        done
+        # --save üst düzey yardımda değil, `up --help` içinde: alt komut
+        # bayraklarını alt komutun kendi yardımından sınamak gerekiyor.
+        _dg "up --save  (profil kaydı)" \
+            bash -c 'hotspotd up --help 2>&1 | grep -q -- "--save"'
+        _dg "status --json  (makine okuru)" \
+            bash -c 'hotspotd status --help 2>&1 | grep -q -- "--json"'
+    fi
+    _dg "$IW var  (durum bunu okuyor)" test -x "$IW"
+    _dg "pkexec var  (root böyle alınıyor)" command -v pkexec
+    _dg "polkit ajanı koşuyor  (şifre kutusu)" \
+        bash -c 'pgrep -x hyprpolkitagent >/dev/null || pgrep -f "polkit.*agent" >/dev/null'
+    _dg "os-hotspot PATH'te kurulu" test -x "$HOME/.local/bin/omarchy-suse/os-hotspot"
+    _dg "tepside hotspot maddesi var" \
+        bash -c 'grep -q "os-hotspot" "$HOME/.local/bin/omarchy-suse/os-kontrol"'
+
+    echo
+    if [ "$sorun" -eq 0 ]; then
+        basari "her şey yerinde"
+    else
+        hata "$sorun madde tutmadı — tepsi düğmesi bunlar düzelene kadar eksik çalışır"
+    fi
+    return "$sorun"
+}
+
+tani()     { kok doctor; }
+otomatik() { kok enable; }
+otomatik_kapat() { kok disable; }
+
+# ── CLI yolu ──────────────────────────────────────────────────────
+# Tepsi/kısayol bunları argümanla çağırır; argümansız menü açılır.
+komut="${1:-}"
+case "$komut" in
+  durum-ozet)   # tepsi için: "acik<TAB>SSID" ya da "kapali"
+      b=$(ap_bilgi); [ -n "$b" ] && printf 'acik\t%s\n' "$(printf '%s' "$b" | cut -f2)" || echo kapali
+      exit 0 ;;
+  -h|--help)
+      echo "Kullanım: os-hotspot [ac|kapat|degistir|durum|kur|tani|otomatik|guncelle|dogrula|durum-ozet]"
+      exit 0 ;;
+esac
+
+case "$komut" in
+  guncelle) giris "Hotspot" "󰑩" "hotspotd güncelleniyor"; guncelle; exit ;;
+  dogrula)  giris "Hotspot" "󰑩" "kurulum doğrulaması"; dogrula; exit ;;
+esac
+
+if ! kurulu; then
+    case "$komut" in
+      ac|kapat|degistir)
+          bildir -a "Hotspot" "hotspotd kurulu değil" "kur: sudo make install"
+          hata "hotspotd kurulu değil"; exit 1 ;;
+    esac
+    giris "Hotspot" "󰑩" "hotspotd kurulu değil"
+    kurulum_uyar || exit 1
+fi
+
+case "$komut" in
+  ac)        ac; exit ;;
+  kapat)     kapat; exit ;;
+  degistir)  degistir; exit ;;
+  goster)    baslik "Hotspot" "󰑩"; durum; exit ;;
+  kur)       kur; exit ;;
+  tani)      tani; exit ;;
+  otomatik)  otomatik; exit ;;
+  guncelle)  guncelle; exit ;;
+  dogrula)   dogrula; exit ;;
+esac
+
+# ── Etkileşimli menü ──────────────────────────────────────────────
+giris "Hotspot" "󰑩" "telefonunu bu bilgisayarın internetine bağla"
+durum
+echo
+
+while true; do
+    if ap_acik; then eylem="󰐥  Hotspot'u kapat"; else eylem="󰀂  Hotspot'u aç"; fi
+    s=$(secim "Ne yapmak istiyorsun?" \
+        "$eylem" \
+        "󰑓  Yeni hotspot tanımla (ad + parola)" \
+        "󰋼  Durumu göster" \
+        "󰺁  Tanılama (hotspotd doctor)" \
+        "󰐊  Açılışta otomatik başlasın" \
+        "󰜺  Açılışta başlamasın" \
+        "󰚰  hotspotd'yi güncelle (kaynaktan kur)" \
+        "󰄬  Kurulumu doğrula" \
+        "󰍃  Çık")
+    # Eşleştirme İKONLA yapılıyor: etiketlerin çoğu "kapat"/"başla" kelimesini
+    # paylaşıyor, metne bakan bir case yanlış dala giriyordu.
+    case "$s" in
+        "󰐥"*) kapat ;;
+        "󰀂"*) ac ;;
+        "󰑓"*) kur ;;
+        "󰋼"*) durum ;;
+        "󰺁"*) tani ;;
+        "󰐊"*) otomatik ;;
+        "󰜺"*) otomatik_kapat ;;
+        "󰚰"*) guncelle ;;
+        "󰄬"*) dogrula ;;
+        *)    break ;;
+    esac
+    echo
+done
+kapanis

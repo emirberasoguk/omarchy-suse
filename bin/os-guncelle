@@ -1,0 +1,62 @@
+#!/bin/bash
+# Sistem güncellemesi — zypper dup + flatpak + masaüstü katmanı.
+#
+# KENDİ GÜNCELLEME FONKSİYONUN VARSA (ör. NVIDIA sürücü kilidini yöneten bir
+# zypper sarmalayıcısı) onu kullan:
+#     OS_GUNCELLE_FONK=fonksiyon_adi   OS_GUNCELLE_DOSYA=~/.zshrc
+# Fonksiyonun YALNIZCA gövdesi çıkarılıp çalıştırılır. Neden `zsh -i` değil:
+# etkileşimli kabuk bütün .zshrc'yi yükler — fastfetch, precmd kancaları,
+# sorular — hepsi launcher'dan açılan pencereye gürültü olarak düşer.
+#
+# Fonksiyonun renkleri masaüstü şemasına uysun istersen şu değişkenleri oku
+# (tanımlı değillerse kendi ANSI renklerine düşsün):
+#     OS_TUI_GREEN · OS_TUI_RED · OS_TUI_YELLOW · OS_TUI_NC
+set -uo pipefail
+source ~/.local/lib/omarchy-suse/os-tui.sh
+
+giris "Sistem Güncellemesi" "󰚰" "zypper · flatpak · masaüstü katmanı"
+
+export OS_TUI_GREEN="${TUI_KALIN}$(_tui_fg "$TUI_PRIMARY")"
+export OS_TUI_RED="${TUI_KALIN}$(_tui_fg "$TUI_ERROR")"
+export OS_TUI_YELLOW="${TUI_KALIN}$(_tui_fg "$TUI_TERTIARY")"
+export OS_TUI_NC="$TUI_SIFIR"
+
+FONK_ADI="${OS_GUNCELLE_FONK:-}"
+FONK_DOSYA="${OS_GUNCELLE_DOSYA:-$HOME/.zshrc}"
+
+if [ -n "$FONK_ADI" ]; then
+    if ! grep -q "^${FONK_ADI}() {" "$FONK_DOSYA" 2>/dev/null; then
+        hata "$FONK_DOSYA içinde ${FONK_ADI}() bulunamadı"
+        exit 1
+    fi
+    FONK=$(awk -v ad="$FONK_ADI" '
+        index($0, ad "() {") == 1 { icinde = 1 }
+        icinde                    { print }
+        icinde && /^\}/           { exit }' "$FONK_DOSYA")
+    kabuk=zsh
+    [[ $FONK_DOSYA == *bashrc* ]] && kabuk=bash
+    "$kabuk" -c "$FONK
+$FONK_ADI"
+else
+    baslikcik "Sistem paketleri"
+    bilgi "zypper ne değişeceğini gösterecek — son onay orada"
+    sudo zypper refresh && sudo zypper dup
+
+    if command -v flatpak >/dev/null 2>&1; then
+        baslikcik "Flatpak"
+        if onay "Flatpak uygulamaları güncellensin mi?"; then
+            flatpak update
+        fi
+    fi
+fi
+
+baslikcik "Masaüstü katmanı"
+if onay "caelestia / quickshell güncellemesi ayrıca kontrol edilsin mi?"; then
+    sudo zypper up --no-allow-vendor-change caelestia-shell caelestia-cli quickshell || true
+    bilgi "kabuk güncellendiyse yeniden başlat:  caelestia shell -k && caelestia shell -d"
+fi
+
+echo
+basari "Tamamlandı"
+kapanis
+giris_al "kapatmak için ↵" >/dev/null

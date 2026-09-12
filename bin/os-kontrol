@@ -1,0 +1,599 @@
+#!/usr/bin/env python3
+"""os-kontrol — caelestia bar'ının sistem tepsisinde kontrol menüsü.
+
+Neden var: caelestia'nın Quick Toggles paneline yeni düğme eklemek QML
+çatalı gerektiriyor (kimlikler Toggles.qml'de sabit: wifi/bluetooth/mic/
+settings/gameMode/dnd/vpn). Tepsi ise standart SNI protokolünü konuşuyor,
+yani QML'e hiç dokunmadan oraya kendi menümüzü koyabiliyoruz.
+
+Menü her açılışta yeniden kuruluyor — durumlar (gece ışığı, şeffaflık,
+kayıt, GPU modu, tazeleme hızı) o an okunuyor, önbelleğe alınmıyor.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import warnings
+
+import gi
+
+# GTK3'ün ImageMenuItem'ı "deprecated" ama GTK3'te çalışan tek ikonlu menü
+# öğesi; AppIndicator zaten GTK3'e bağlı. Uyarıları susturuyoruz.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+gi.require_version("Gtk", "3.0")
+try:
+    gi.require_version("AyatanaAppIndicator3", "0.1")
+    from gi.repository import AyatanaAppIndicator3 as AppIndicator
+except (ValueError, ImportError):
+    sys.exit(
+        "AyatanaAppIndicator3 typelib yok.\n"
+        "  sudo zypper install typelib-1_0-AyatanaAppIndicator3-0_1"
+    )
+from gi.repository import GLib, Gtk  # noqa: E402
+
+BIN = Path.home() / ".local/bin/omarchy-suse"
+# Menü ikonları BAR'IN DİLİYLE uyumlu olsun diye hepsi "-symbolic":
+# caelestia'nın bar'ı Material Symbols (tek renk, ince çizgi) kullanıyor;
+# dolu/renkli tema ikonları (scanner, image-x-generic) yanında yamalı duruyordu.
+# Adwaita'nın symbolic seti aynı dilde. Hepsi Qt tarafında doğrulandı (Quickshell.iconPath ile ölçüldü).
+# DİKKAT: SNI menüsünü GTK değil Quickshell çiziyor, yani Qt'nin ikon araması
+# geçerli — ve Qt "-symbolic" yedeğine DÜŞMÜYOR. GNOME 50'nin Adwaita'sı
+# edit-paste ve application-exit gibi eski adları yalnızca -symbolic sonekiyle
+# taşıdığı için bu ikisi soneksiz hâlde kırık kare çiziyordu.
+TERMINAL = ["kitty", "-e"]
+
+IKON_DIZIN = Path.home() / ".local/share/omarchy-suse/tepsi"
+IKON_ACIK = "os-kontrol-acik"
+IKON_KAPALI = "os-kontrol-sade"
+
+# Papirus'taki redshift ikonları "panel/" ve "status/" bağlamlarında duruyor;
+# Quickshell'in tepsisi onları çözemedi (kırık ikon karesi çıktı). Kendi
+# ikonlarımızı üretip AppIndicator'a yolu doğrudan veriyoruz — tema araması
+# devreden çıkıyor. Renk şemadan geliyor, açık/koyu modda da doğru duruyor.
+# Tepsi ikonu — OS_KONTROL_IKON ile seçilir: dunya (varsayılan) · cip · cark
+# Her biri iki durumda: sade (gece ışığı kapalı) ve vurgulu (açık).
+IKON_SETLERI = {
+    "cark": (
+        # açık: çark + ortada dolu göbek
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<g fill="none" stroke="{r}" stroke-width="1.15" stroke-linejoin="round" stroke-linecap="round">
+<path d="M19.9 13.2v-2.4l-2.3-.4a6.4 6.4 0 0 0-.75-1.8l1.35-1.85-1.7-1.7L14.65 6.4a6.4 6.4 0 0 0-1.8-.75L12.45 3.35h-2.4L9.65 5.65a6.4 6.4 0 0 0-1.8.75L6 5.05l-1.7 1.7L5.65 8.6a6.4 6.4 0 0 0-.75 1.8l-2.3.4v2.4l2.3.4c.18.64.43 1.24.75 1.8L4.3 17.25l1.7 1.7 1.85-1.35c.56.32 1.16.57 1.8.75l.4 2.3h2.4l.4-2.3c.64-.18 1.24-.43 1.8-.75l1.85 1.35 1.7-1.7-1.35-1.85c.32-.56.57-1.16.75-1.8z"/>
+</g><circle cx="12" cy="12" r="3" fill="{r}"/></svg>""",
+        # kapalı: sade çark
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<g fill="none" stroke="{r}" stroke-width="1.15" stroke-linejoin="round" stroke-linecap="round">
+<circle cx="12" cy="12" r="3"/>
+<path d="M19.9 13.2v-2.4l-2.3-.4a6.4 6.4 0 0 0-.75-1.8l1.35-1.85-1.7-1.7L14.65 6.4a6.4 6.4 0 0 0-1.8-.75L12.45 3.35h-2.4L9.65 5.65a6.4 6.4 0 0 0-1.8.75L6 5.05l-1.7 1.7L5.65 8.6a6.4 6.4 0 0 0-.75 1.8l-2.3.4v2.4l2.3.4c.18.64.43 1.24.75 1.8L4.3 17.25l1.7 1.7 1.85-1.35c.56.32 1.16.57 1.8.75l.4 2.3h2.4l.4-2.3c.64-.18 1.24-.43 1.8-.75l1.85 1.35 1.7-1.7-1.35-1.85c.32-.56.57-1.16.75-1.8z"/>
+</g></svg>""",
+    ),
+    "dunya": (
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<circle cx="12" cy="12" r="9" fill="{r}" opacity="0.22"/>
+<g fill="none" stroke="{r}" stroke-width="1.15">
+<circle cx="12" cy="12" r="9"/>
+<ellipse cx="12" cy="12" rx="9" ry="3.9"/><ellipse cx="12" cy="12" rx="3.9" ry="9"/>
+<path d="M3 12h18"/></g></svg>""",
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<g fill="none" stroke="{r}" stroke-width="1.15">
+<circle cx="12" cy="12" r="9"/>
+<ellipse cx="12" cy="12" rx="9" ry="3.9"/><ellipse cx="12" cy="12" rx="3.9" ry="9"/>
+<path d="M3 12h18"/></g></svg>""",
+    ),
+    "cip": (
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<rect x="6.75" y="6.75" width="10.5" height="10.5" rx="2" fill="{r}" opacity="0.22"/>
+<g fill="none" stroke="{r}" stroke-width="1.15" stroke-linecap="round">
+<rect x="6.75" y="6.75" width="10.5" height="10.5" rx="2"/>
+<path d="M9.5 3.6v3.15M14.5 3.6v3.15M9.5 17.25v3.15M14.5 17.25v3.15"/>
+<path d="M3.6 9.5h3.15M3.6 14.5h3.15M17.25 9.5h3.15M17.25 14.5h3.15"/>
+</g><rect x="10.2" y="10.2" width="3.6" height="3.6" rx="0.9" fill="{r}"/></svg>""",
+        """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+<g fill="none" stroke="{r}" stroke-width="1.15" stroke-linecap="round">
+<rect x="6.75" y="6.75" width="10.5" height="10.5" rx="2"/>
+<rect x="10.2" y="10.2" width="3.6" height="3.6" rx="0.9"/>
+<path d="M9.5 3.6v3.15M14.5 3.6v3.15M9.5 17.25v3.15M14.5 17.25v3.15"/>
+<path d="M3.6 9.5h3.15M3.6 14.5h3.15M17.25 9.5h3.15M17.25 14.5h3.15"/>
+</g></svg>""",
+    ),
+}
+
+IKON_SETI = os.environ.get("OS_KONTROL_IKON", "dunya")
+if IKON_SETI not in IKON_SETLERI:
+    IKON_SETI = "dunya"
+
+
+def sema_rengi(anahtar: str, yedek: str) -> str:
+    try:
+        d = json.loads((Path.home() / ".local/state/caelestia/scheme.json").read_text())
+        v = d.get("colours", d).get(anahtar)
+        if isinstance(v, str) and len(v.lstrip("#")) == 6:
+            return "#" + v.lstrip("#")
+    except Exception:
+        pass
+    return yedek
+
+
+HICOLOR = Path.home() / ".local/share/icons/hicolor/scalable/apps"
+
+# Menü ikonları — tepsi ikonuyla AYNI görsel dilde, elden çizilmiş.
+#
+# Neden Adwaita'dan vazgeçildi: Adwaita'nın symbolic'leri DOLGU tabanlı
+# (`fill`, `stroke` yok). Tepsi ikonumuz ise çizgi tabanlı
+# (`stroke-width="1.15"`, yuvarlak uçlar) ve bar'ın Material Symbols'üyle
+# aynı dili konuşuyor. Adwaita'yı yalnızca şema rengine boyamak rengi
+# düzeltiyordu ama kalınlığı düzeltmiyordu — menü ile bar yan yana
+# durduğunda ikisi farklı ağırlıkta görünüyordu.
+#
+# Kurallar (yeni ikon eklerken bunlara uy):
+#   viewBox="0 0 24 24" · fill="none" · stroke="{r}" · stroke-width="1.15"
+#   yuvarlak uç ve köşe · içerik 3..21 aralığında · vurgu gerekirse
+#   aynı renkte opacity="0.22" dolgu (tepsi ikonundaki "açık" durumu gibi)
+CIZGI = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+         '<g fill="none" stroke="{r}" stroke-width="1.15" '
+         'stroke-linecap="round" stroke-linejoin="round">{ic}</g></svg>')
+
+SEMBOLLER = {
+    # Belge + köşe nişangahları: metin tanıma
+    "ocr": '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9"/>'
+           '<path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9"/>'
+           '<path d="M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15"/>'
+           '<path d="M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'
+           '<path d="M8 10.5h8M8 13.5h5"/>',
+    # Üç nişan karesi + modüller: QR
+    "qr": '<rect x="4" y="4" width="6" height="6" rx="1"/>'
+          '<rect x="14" y="4" width="6" height="6" rx="1"/>'
+          '<rect x="4" y="14" width="6" height="6" rx="1"/>'
+          '<path d="M14 14h2.5M20 14v2.5M14 17.5h2.5M17.5 20H20"/>',
+    # Ay — açıkken içi hafif dolu (tepsi ikonunun "açık" durumuyla aynı fikir)
+    "gece-acik": '<path d="M20 14.4A8.4 8.4 0 0 1 9.6 4 8.4 8.4 0 1 0 20 14.4z" '
+                 'fill="{r}" fill-opacity="0.22"/>',
+    "gece-kapali": '<path d="M20 14.4A8.4 8.4 0 0 1 9.6 4 8.4 8.4 0 1 0 20 14.4z"/>'
+                   '<path d="M4.5 4.5l15 15"/>',
+    # Pano
+    "pano": '<rect x="5" y="5" width="14" height="16" rx="2"/>'
+            '<rect x="9" y="3" width="6" height="4" rx="1.2"/>'
+            '<path d="M8.5 12h7M8.5 15.5h4.5"/>',
+    # Üç düğüm + bağlantı: paylaş
+    "paylas": '<circle cx="17.5" cy="5.5" r="2.2"/>'
+              '<circle cx="6.5" cy="12" r="2.2"/>'
+              '<circle cx="17.5" cy="18.5" r="2.2"/>'
+              '<path d="M8.5 10.9l7-4.3M8.5 13.1l7 4.3"/>',
+    # Belge + giden ok
+    "dosya-paylas": '<path d="M12.5 21H6.5A1.5 1.5 0 0 1 5 19.5v-15A1.5 1.5 0 0 1 '
+                    '6.5 3h6L17 7.5v3"/>'
+                    '<path d="M12.5 3v4.5H17"/>'
+                    '<path d="M13.5 16.5h6M17 14l2.5 2.5L17 19"/>',
+    # Monitör
+    "ekran": '<rect x="3" y="5" width="18" height="12" rx="2"/>'
+             '<path d="M9 21h6M12 17v4"/>',
+    # Çip — tepsi ikon setindeki "cip" ile bilerek aynı çizim
+    "gpu": '<rect x="6.75" y="6.75" width="10.5" height="10.5" rx="2"/>'
+           '<rect x="10.2" y="10.2" width="3.6" height="3.6" rx="0.9"/>'
+           '<path d="M9.5 3.6v3.15M14.5 3.6v3.15M9.5 17.25v3.15M14.5 17.25v3.15"/>'
+           '<path d="M3.6 9.5h3.15M3.6 14.5h3.15M17.25 9.5h3.15M17.25 14.5h3.15"/>',
+    # Yayın kutusu + dalgalar: hotspot (açıkken kutu hafif dolu, iki dalga)
+    "hotspot-acik": '<rect x="4" y="14.5" width="16" height="5.5" rx="1.6" '
+                    'fill="{r}" fill-opacity="0.22"/>'
+                    '<path d="M7 17.25h0.01"/>'
+                    '<path d="M8.4 10.6a5.1 5.1 0 0 1 7.2 0"/>'
+                    '<path d="M5.6 7.8a9.1 9.1 0 0 1 12.8 0"/>',
+    "hotspot-kapali": '<rect x="4" y="14.5" width="16" height="5.5" rx="1.6"/>'
+                      '<path d="M7 17.25h0.01"/>'
+                      '<path d="M8.4 10.6a5.1 5.1 0 0 1 7.2 0"/>'
+                      '<path d="M4.5 4.5l15 15"/>',
+    # Kapı + çıkan ok
+    "cikis": '<path d="M14 21H6.5A1.5 1.5 0 0 1 5 19.5v-15A1.5 1.5 0 0 1 6.5 3H14"/>'
+             '<path d="M11 12h9M16.5 8.5L20 12l-3.5 3.5"/>',
+}
+
+# Kendi ikonumuz yazılamazsa düşülecek Adwaita adları.
+YEDEK_ADLAR = {
+    "ocr": "scanner-symbolic",
+    "qr": "view-grid-symbolic",
+    "gece-acik": "night-light-symbolic",
+    "gece-kapali": "night-light-disabled-symbolic",
+    "pano": "edit-paste-symbolic",
+    "paylas": "send-to-symbolic",
+    "dosya-paylas": "document-send-symbolic",
+    "ekran": "video-display-symbolic",
+    "gpu": "application-x-executable-symbolic",
+    "hotspot-acik": "network-wireless-symbolic",
+    "hotspot-kapali": "network-wireless-offline-symbolic",
+    "cikis": "application-exit-symbolic",
+}
+
+
+def sembol(anahtar: str) -> str:
+    """Üretilmiş ikonun adı; dosya yoksa Adwaita adına düşer."""
+    hedef = HICOLOR / f"os-kontrol-s-{anahtar}.svg"
+    return f"os-kontrol-s-{anahtar}" if hedef.exists() else YEDEK_ADLAR[anahtar]
+
+
+def sembolleri_uret(renk: str) -> list[str]:
+    """Menü ikonlarını şema rengiyle üret. Artık kopyalamıyoruz, çiziyoruz.
+
+    Dönen liste: İLK KEZ oluşturulan ikonlar. Qt ikon temasını süreç
+    başlarken önbelleğe aldığı için, kabuk zaten koşarken eklenen bir ikon
+    yeniden başlatılana kadar görünmez — çağıran bunu haber verebilsin diye.
+    """
+    HICOLOR.mkdir(parents=True, exist_ok=True)
+    yeni: list[str] = []
+    for anahtar, ic in SEMBOLLER.items():
+        hedef = HICOLOR / f"os-kontrol-s-{anahtar}.svg"
+        vardi = hedef.exists()
+        try:
+            hedef.write_text(CIZGI.format(r=renk, ic=ic.replace("{r}", renk)))
+        except OSError:
+            continue
+        if not vardi:
+            yeni.append(anahtar)
+    return yeni
+
+
+def ikonlari_uret() -> list[str]:
+    """Tepsi ikonlarını şema rengiyle üret. Her açılışta yenilenir.
+
+    İki yere birden yazıyoruz:
+      - IKON_DIZIN → SNI'nin IconThemePath'i
+      - hicolor/scalable/apps → asıl çözülen yer
+
+    Neden ikisi: caelestia'nın getTrayIcon'u önce Quickshell.iconPath() ile
+    TEMA araması yapıyor; bulamazsa "<path>/<ad>" diye deniyor ama uzantı
+    eklemiyor, yani o yedek hiç tutmuyor. Bu yüzden ikonun gerçekten tema
+    içinde (hicolor) olması şart.
+    """
+    # Bar'ın durum ikonları m3secondary kullanıyor (StatusIcons.qml:15) —
+    # tepsi ikonu da aynı rengi kullansın ki tek dil olsun.
+    renk = sema_rengi("secondary", "#d0c7a2")
+    acik_svg, kapali_svg = IKON_SETLERI[IKON_SETI]
+    for dizin in (IKON_DIZIN, HICOLOR):
+        dizin.mkdir(parents=True, exist_ok=True)
+        (dizin / f"{IKON_ACIK}.svg").write_text(acik_svg.format(r=renk))
+        (dizin / f"{IKON_KAPALI}.svg").write_text(kapali_svg.format(r=renk))
+    yeni = sembolleri_uret(renk)
+    try:
+        subprocess.run(["gtk-update-icon-cache", "-qtf", str(HICOLOR.parents[1])],
+                       capture_output=True, timeout=10)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return yeni
+
+
+# ── Sistem durumu okuma ───────────────────────────────────────────
+def kabuk(*komut: str, timeout: float = 4.0) -> str:
+    try:
+        r = subprocess.run(komut, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def calistir(*komut: str) -> None:
+    """Menüden tetiklenen işler arka planda, oturumdan bağımsız koşsun."""
+    try:
+        subprocess.Popen(komut, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def gece_acik() -> bool:
+    return bool(kabuk("pgrep", "-x", "hyprsunset"))
+
+
+def kayit_suruyor() -> bool:
+    return bool(kabuk("pgrep", "-x", "gpu-screen-recorder"))
+
+
+def hypr_secenek(ad: str, alan: str = "float") -> str:
+    ham = kabuk("hyprctl", "getoption", ad, "-j")
+    try:
+        return str(json.loads(ham).get(alan, ""))
+    except (json.JSONDecodeError, AttributeError):
+        return ""
+
+
+def seffaflik_acik() -> bool:
+    return hypr_secenek("decoration:active_opacity") not in ("1.000000", "1.0", "1", "")
+
+
+def bosluk_acik() -> bool:
+    css = hypr_secenek("general:gaps_out", "css")
+    return css.split()[0] != "0" if css else True
+
+
+def ekran() -> dict:
+    """Tazeleme hızı ayarlanacak monitör: dahili panel (eDP*) varsa o,
+    yoksa odaktaki monitör. Hiç monitör okunamazsa boş sözlük."""
+    try:
+        m = json.loads(kabuk("hyprctl", "monitors", "-j"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(m, list) or not m:
+        return {}
+    return (next((x for x in m if str(x.get("name", "")).startswith("eDP")), None)
+            or next((x for x in m if x.get("focused")), m[0]))
+
+
+def tazeleme() -> int:
+    try:
+        return round(float(ekran()["refreshRate"]))
+    except (KeyError, TypeError, ValueError):
+        return 0
+
+
+def tazeleme_secenekleri() -> list[int]:
+    """Monitörün ŞU ANKİ çözünürlükte desteklediği tazeleme hızları.
+    Sabit 144/60 yazmak yerine donanımın kendi listesinden okunuyor
+    (availableModes: "1920x1080@144.00Hz" biçiminde)."""
+    e = ekran()
+    on_ek = f'{e.get("width")}x{e.get("height")}@'
+    hizlar = set()
+    for mod in e.get("availableModes", []):
+        if isinstance(mod, str) and mod.startswith(on_ek):
+            try:
+                hizlar.add(round(float(mod[len(on_ek):].removesuffix("Hz"))))
+            except ValueError:
+                pass
+    return sorted(hizlar, reverse=True)
+
+
+def gpu_modu() -> tuple[str, str]:
+    """(aktif, bekleyen) — supergfxctl yoksa boş döner."""
+    if not shutil.which("supergfxctl"):
+        return ("", "")
+    aktif = kabuk("supergfxctl", "-g")
+    bekleyen = kabuk("supergfxctl", "-P")
+    if bekleyen in ("Unknown", aktif):
+        bekleyen = ""
+    return (aktif, bekleyen)
+
+
+def hotspot() -> tuple[bool, str]:
+    """(açık mı, SSID) — hotspotd'nin durum dosyası root'a kapalı (/run/hotspotd
+    0700), o yüzden `iw dev`e bakıyoruz: type AP olan arayüz varsa hotspot
+    ayakta ve SSID de orada. iw kullanıcıya açık, root gerekmiyor."""
+    iface_ssid = ""
+    for satir in kabuk("/usr/sbin/iw", "dev").splitlines():
+        p = satir.strip()
+        if p.startswith("ssid "):
+            iface_ssid = p[5:]
+        elif p == "type AP":
+            return (True, iface_ssid)
+        elif p.startswith("Interface "):
+            iface_ssid = ""
+    return (False, "")
+
+
+# hotspotd'yi kaynaktan geliştiriyorsan HOTSPOTD_KAYNAK ile ağacın yolunu ver;
+# kurulu sürüm geride kalınca menüye "Güncelle" maddesi çıkar.
+_HS_KOK = os.environ.get("HOTSPOTD_KAYNAK", "")
+HOTSPOTD_KAYNAK = Path(_HS_KOK).expanduser() / "hotspotd/__init__.py" if _HS_KOK else None
+
+
+def hotspotd_surumler() -> tuple[str, str]:
+    """(kurulu, kaynaktaki) — hotspotd geliştirilen bir proje, sistemdeki kopya
+    kaynak ağacın gerisinde kalabiliyor. Menü bunu görünce güncelleme maddesi
+    çıkarıyor. Yalnız menü YENİDEN KURULURKEN okunuyor (3 sn'lik nabızda değil):
+    `hotspotd --version` bir python süreci başlatıyor."""
+    kurulu = kabuk("hotspotd", "--version").split()[-1:] or [""]
+    try:
+        kaynak = next(
+            satir.split('"')[1]
+            for satir in (HOTSPOTD_KAYNAK.read_text() if HOTSPOTD_KAYNAK else "").splitlines()
+            if satir.startswith("__version__")
+        )
+    except (OSError, StopIteration, IndexError):
+        kaynak = ""
+    return (kurulu[0], kaynak)
+
+
+def wifi_band() -> str:
+    c = kabuk("nmcli", "-t", "-f", "NAME,TYPE", "con", "show", "--active")
+    ad = next((s.split(":")[0] for s in c.splitlines() if ":802-11-wireless" in s), "")
+    if not ad:
+        return ""
+    b = kabuk("nmcli", "-g", "802-11-wireless.band", "con", "show", ad)
+    return {"bg": "2.4 GHz", "a": "5 GHz", "6GHz": "6 GHz", "": "otomatik"}.get(b, b)
+
+
+# ── Menü ──────────────────────────────────────────────────────────
+class Kontrol:
+    def __init__(self) -> None:
+        yeni_ikonlar = ikonlari_uret()
+        # Kabuk zaten koşuyorken yeni bir ikon eklendiyse Qt onu göremez
+        # (ikon teması süreç başlarken önbelleğe alınıyor) ve menüde ikon
+        # yerine boşluk çıkar. Sessiz kalmasın: söyle.
+        if yeni_ikonlar and kabuk("pgrep", "-f", "qs -c caelestia"):
+            calistir("notify-send", "-a", "Kontrol", "Yeni menü ikonu",
+                     f"{len(yeni_ikonlar)} ikon eklendi — caelestia yeniden "
+                     "başlayınca görünecek:  caelestia shell -k && caelestia shell -d")
+        self.ind = AppIndicator.Indicator.new(
+            "os-kontrol", IKON_KAPALI,
+            AppIndicator.IndicatorCategory.SYSTEM_SERVICES)
+        self.ind.set_icon_theme_path(str(IKON_DIZIN))
+        self.ind.set_title("Kontrol")
+        self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+        self.menu = Gtk.Menu()
+        self.ind.set_menu(self.menu)
+        # Sol tık da menüyü açsın (kullanıcı tercihi)
+        self.ind.set_secondary_activate_target(None)
+
+        # DBusMenu'de menü YEREL olarak hiç gösterilmiyor — tüketici (Quickshell)
+        # AboutToShow çağırıyor ve bu GTK'nin "show" sinyalini tetiklemiyor.
+        # Bu yüzden "show"a bağlanmak işe yaramıyordu: etiketler ve ikonlar ilk
+        # kurulumdaki değerlerde donuyordu. Durumu yoklayıp değiştiğinde
+        # yeniden kuruyoruz.
+        self._imza = None
+        self.kur()
+        GLib.timeout_add_seconds(3, self.nabiz)
+
+    # -- yardımcılar --
+    def _ekle(self, etiket: str, geri=None, ikon: str | None = None) -> Gtk.MenuItem:
+        oge = Gtk.ImageMenuItem.new_with_label(etiket) if ikon else Gtk.MenuItem.new_with_label(etiket)
+        if ikon:
+            oge.set_image(Gtk.Image.new_from_icon_name(ikon, Gtk.IconSize.MENU))
+            oge.set_always_show_image(True)
+        if geri:
+            oge.connect("activate", lambda *_: geri())
+        else:
+            oge.set_sensitive(False)
+        self.menu.append(oge)
+        return oge
+
+    def _ayrac(self) -> None:
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+    def _altmenu(self, etiket: str, ogeler: list[tuple[str, object]],
+                 ikon: str | None = None) -> None:
+        ust = Gtk.ImageMenuItem.new_with_label(etiket) if ikon else Gtk.MenuItem.new_with_label(etiket)
+        if ikon:
+            ust.set_image(Gtk.Image.new_from_icon_name(ikon, Gtk.IconSize.MENU))
+            ust.set_always_show_image(True)
+        alt = Gtk.Menu()
+        for ad, geri in ogeler:
+            o = Gtk.MenuItem.new_with_label(ad)
+            if geri:
+                o.connect("activate", lambda _w, g=geri: g())
+            else:
+                o.set_sensitive(False)
+            alt.append(o)
+        ust.set_submenu(alt)
+        self.menu.append(ust)
+
+    # -- menüyü kur --
+    def kur(self) -> None:
+        for c in self.menu.get_children():
+            self.menu.remove(c)
+
+        # En sık kullanılanlar en üstte — kullanıcı bunlar için tepsiyi istedi
+        self._ekle("Ekrandan metin oku  (OCR)",
+                   lambda: calistir(str(BIN / "os-yakala"), "ocr"), sembol("ocr"))
+        self._ekle("QR kodu oku",
+                   lambda: calistir(str(BIN / "os-yakala"), "qr"), sembol("qr"))
+        self._ayrac()
+
+        # CheckMenuItem ikon taşımıyor (tasarımı gereği onay kutusu gösteriyor),
+        # o yüzden durumu ikonun kendisiyle anlatıyoruz.
+        gece = gece_acik()
+        self._ekle("Gece ışığı  ·  açık" if gece else "Gece ışığı  ·  kapalı",
+                   lambda: self.gecikmeli(str(BIN / "os-gece")),
+                   sembol("gece-acik") if gece else sembol("gece-kapali"))
+        self._ayrac()
+        self._ekle("Panoyu dosyaya kaydet",
+                   lambda: calistir(str(BIN / "os-pano-kaydet")), sembol("pano"))
+        self._ekle("Panoyu paylaş",
+                   lambda: calistir(str(BIN / "os-paylas"), "pano"), sembol("paylas"))
+        self._ekle("Dosya paylaş",
+                   lambda: calistir(str(BIN / "os-paylas"), "dosya"), sembol("dosya-paylas"))
+
+        self._ayrac()
+        hs_acik, hs_ssid = hotspot()
+        hs_kurulu, hs_kaynak = hotspotd_surumler()
+        if hs_kurulu:
+            hs_ogeler = [
+                ("Kapat" if hs_acik else "Aç",
+                 lambda: calistir(str(BIN / "os-hotspot"), "degistir")),
+                ("Ayarlar ve tanılama…",
+                 lambda: calistir(*TERMINAL, str(BIN / "os-hotspot"))),
+            ]
+            if hs_kaynak and hs_kaynak != hs_kurulu:
+                hs_ogeler.append((f"Güncelle  ·  {hs_kurulu} → {hs_kaynak}",
+                                  lambda: calistir(*TERMINAL, str(BIN / "os-hotspot"),
+                                                   "guncelle")))
+            hs_etiket = f"Hotspot  ·  {hs_ssid or 'açık'}" if hs_acik else "Hotspot  ·  kapalı"
+        else:
+            hs_ogeler = [("hotspotd'yi kur…",
+                          lambda: calistir(*TERMINAL, str(BIN / "os-hotspot")))]
+            hs_etiket = "Hotspot  ·  kurulu değil"
+        self._altmenu(hs_etiket, hs_ogeler,
+                      sembol("hotspot-acik" if hs_acik else "hotspot-kapali"))
+
+        self._ayrac()
+        hz = tazeleme()
+        secenekler = tazeleme_secenekleri()
+        if len(secenekler) > 1:
+            self._altmenu(f"Ekran  ·  {hz} Hz" if hz else "Ekran",
+                          [(f"{s} Hz", lambda s=s: self.mod_ayarla(s)) for s in secenekler],
+                          sembol("ekran"))
+
+        aktif, bekleyen = gpu_modu()
+        if aktif:
+            etiket = f"GPU  ·  {aktif}" + (f"  →  {bekleyen} (çıkış gerekli)" if bekleyen else "")
+            self._altmenu(etiket, [
+                ("Hybrid  (NVIDIA açık)", lambda: self.gpu_ayarla("Hybrid")),
+                ("Integrated  (pil dostu; dGPU'ya bağlı portlar çalışmaz)", lambda: self.gpu_ayarla("Integrated")),
+                ("— çıkış yaptığında uygulanır —", None),
+            ], sembol("gpu"))
+
+        self._ayrac()
+        self._ekle("Kontrolü kapat", Gtk.main_quit, sembol("cikis"))
+
+        self.menu.show_all()
+        self._imza = self.durum_imzasi()
+        self.ikon_yenile()
+
+    # -- eylemler --
+    def gecikmeli(self, *komut: str) -> None:
+        """Komutu çalıştır, sonra durumların oturması için ikonu yenile."""
+        calistir(*komut)
+        # Eylem oturana kadar bekle, sonra menüyü tazele
+        GLib.timeout_add(900, lambda: (self.kur(), False)[1])
+
+    def mod_ayarla(self, hz: int) -> None:
+        # Konum ve ölçek monitörün o anki değerlerinden korunuyor; "auto"
+        # yazmak çok monitörlü düzeni yeniden dizip bozabilirdi.
+        e = ekran()
+        if not e:
+            return
+        calistir("hyprctl", "eval",
+                 f'hl.monitor({{ output = "{e["name"]}", '
+                 f'mode = "{e["width"]}x{e["height"]}@{hz}", '
+                 f'position = "{e.get("x", 0)}x{e.get("y", 0)}", '
+                 f'scale = {e.get("scale", 1)} }})')
+
+    def gpu_ayarla(self, mod: str) -> None:
+        calistir("supergfxctl", "-m", mod)
+
+    def durum_imzasi(self) -> tuple:
+        """Menüde görünen her şeyin özeti — değişince menü yeniden kurulur."""
+        return (gece_acik(), tazeleme(), gpu_modu(), hotspot())
+
+    def nabiz(self) -> bool:
+        imza = self.durum_imzasi()
+        if imza != self._imza:
+            self.kur()
+        else:
+            self.ikon_yenile()
+        return True
+
+    def ikon_yenile(self) -> bool:
+        self.ind.set_icon_full(IKON_ACIK if gece_acik() else IKON_KAPALI, "Kontrol")
+        return True
+
+
+def main() -> None:
+    # --ikonlar: yalnızca ikonları üret ve çık.
+    # Qt ikon temasını SÜREÇ BAŞLARKEN önbelleğe alıyor; kabuk başladıktan
+    # sonra hicolor'a eklenen dosyaları görmüyor (kırık kare çiziyor).
+    # Bu yüzden baslat-caelestia.sh kabuğu başlatmadan ÖNCE bunu çağırıyor.
+    if "--ikonlar" in sys.argv:
+        yeni = ikonlari_uret()
+        print(f"ikonlar üretildi: {HICOLOR}")
+        if yeni:
+            print("ilk kez oluşturulanlar: " + ", ".join(yeni))
+        return
+
+    os.environ.setdefault("GDK_BACKEND", "wayland,x11")
+    Kontrol()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()
