@@ -1,185 +1,196 @@
+🌐 **English** · [Türkçe](README.tr.md)
+
 # omarchy-suse
 
-openSUSE Tumbleweed için **Hyprland + caelestia** masaüstü: kurulum script'i,
-çalışan yapılandırma, 19 yardımcı script ve yolda öğrenilmiş tuzakların
-belgesi.
+A **Hyprland + caelestia** desktop for openSUSE Tumbleweed: an installer,
+a working configuration, 19 helper scripts, and a written record of the
+pitfalls found along the way.
 
-> *English:* A Turkish-language setup for Hyprland 0.56 (Lua config) with the
-> caelestia shell on openSUSE Tumbleweed: an interactive installer, working
-> configs, 19 helper scripts (tray menu, OCR/QR, web apps, AppImage, updates…)
-> and a detailed troubleshooting guide for the pitfalls along the way.
+Inspired by Omarchy: a Hyprland desktop that feels **integrated** rather than
+assembled from parts. Omarchy is tied to Arch, and caelestia doesn't officially
+support openSUSE. This repository fills that gap.
 
-Omarchy'den ilham alındı: parça parça değil, **bütünleşik** hissettiren bir
-Hyprland masaüstü. Omarchy Arch'a bağlı, caelestia ise openSUSE'yi resmi olarak
-desteklemiyor. Bu depo o boşluğu dolduruyor.
+> **Language note:** All documentation is available in English and Turkish
+> ([index](docs/README.md)). The scripts' menus, notifications and the comments
+> inside the configuration files are currently in Turkish.
 
-## Kimin için
+## Who is this for
 
-- openSUSE'ye **Hyprland + caelestia** kurmak isteyenler. Paketleme hataları,
-  eksik fontlar, siyah ekran ve çalışmayan launcher gibi sorunların hepsi
-  çözümüyle birlikte yazılı.
-- caelestia'yı **çatal (fork) açmadan** genişletmek, kendi script'ini
-  launcher'a, sistem tepsisine ya da tema motoruna bağlamak isteyenler.
-- Hyprland'in yeni **Lua config**'inde `hyprctl`'in neden "ok" deyip yanlış
-  işi yaptığını merak edenler.
+- People who want to install **Hyprland + caelestia** on openSUSE. Packaging
+  bugs, missing fonts, black screens and a launcher that won't launch are all
+  written down with their fixes.
+- People who want to extend caelestia **without forking it** and hook their
+  own scripts into the launcher, the system tray or the theme engine.
+- Anyone wondering why `hyprctl` says "ok" and then does the wrong thing with
+  Hyprland's new **Lua config**.
 
-## Test edilen ortam
+## Tested environment
 
 | | |
 |---|---|
-| Dağıtım | openSUSE Tumbleweed |
-| Compositor | Hyprland 0.56.2 (Lua yapılandırma: `hyprland.lua`) |
-| Kabuk | caelestia-shell 2.3.0 · caelestia-cli 1.1.2 · quickshell 0.3.1 (`home:kaiman`) |
-| Giriş | GDM. **GNOME yan yana kurulu kalır**, ikisi arasında giriş ekranından seçilir |
-| Donanım | Intel + NVIDIA hibrit dizüstü. Tek GPU'lu makinelerde de çalışır |
+| Distribution | openSUSE Tumbleweed |
+| Compositor | Hyprland 0.56.2 (Lua configuration: `hyprland.lua`) |
+| Shell | caelestia-shell 2.3.0 · caelestia-cli 1.1.2 · quickshell 0.3.1 (`home:kaiman`) |
+| Login | GDM. **GNOME stays installed alongside**; pick either one on the login screen |
+| Hardware | Intel + NVIDIA hybrid laptop. Also works on single-GPU machines |
 
-## Kurulum
+## Installation
 
 ```bash
-git clone <bu-deponun-adresi> omarchy-suse
+git clone <this-repository-url> omarchy-suse
 cd omarchy-suse
 ./kurulum.sh
 ```
 
-`kurulum.sh` yedi faz halinde ilerler. Her fazda ne yapacağını gösterir ve
-**sorar**; varsayılan cevap yoktur, zypper'ın kendi onayları da olduğu gibi
-kalır. Üzerine yazılan her dosya önce `~/.local/state/omarchy-suse/yedek/`
-altına yedeklenir.
+`kurulum.sh` ("installation") runs in seven phases. Each phase shows what it
+will do and **asks** first. There is no default answer; type `e` (yes) or `h`
+(no). zypper's own confirmations are kept as they are. Every file that would
+be overwritten is backed up to `~/.local/state/omarchy-suse/yedek/` first.
 
-Script çalıştırmadan adım adım anlamak istersen: [`docs/KURULUM.md`](docs/KURULUM.md)
+To understand the steps without running a script:
+[`docs/en/INSTALL.md`](docs/en/INSTALL.md)
 
-Kurulumdan önce `config/hypr/hyprland.lua`'nın başındaki **KİŞİSEL TERCİHLER**
-bölümüne bak (tarayıcı, klavye düzeni).
+Before installing, look at the **KİŞİSEL TERCİHLER** ("personal preferences")
+block at the top of `config/hypr/hyprland.lua`: browser, file manager and
+keyboard layout (defaults to Turkish, `tr`).
 
-## Neler geliyor
+## What you get
 
-### Kısayollar
+### Keybindings
 
-| Tuş | İş |
+| Key | Action |
 |---|---|
-| `Super+Space` | Uygulama başlatıcı (`:` ile eylemler) |
-| `Super+Return` / `Super+T` | Terminal (T: açıksa ona odaklan) |
-| `Super+B` | Tarayıcı (açıksa ona odaklan) |
-| `Super+E` / `Super+M` | Dosya yöneticisi |
-| `Super+Q` | Pencereyi kapat |
-| `Super+Up` / `Super+F` | Büyüt / tam ekran |
-| `Super+V` | Yüzer pencere |
-| `Super+1…0` | Çalışma alanları · `Shift` ile pencereyi taşı |
-| `Super+Ctrl+←/→` | Önceki/sonraki çalışma alanı |
-| `Super+Shift+←/→/↑/↓` | Pencereyi başka monitöre taşı |
-| `Super+D` · `S` · `U` · `N` | Pano · kenar çubuğu · araçlar · ayarlar (Nexus) |
-| `Super+L` · `Super+Escape` | Kilitle · oturum menüsü |
-| `Super+Tab` | Tüm pencereler |
-| `Print` / `Shift+Print` | Ekran görüntüsü (dondurup seç) |
-| `Super+Shift+T` · `Super+Shift+Q` | Ekrandan metin oku (OCR) · QR oku |
-| `Super+Shift+N` | Gece ışığı |
-| `Super+Shift+V` · `Super+Shift+S` | Panoyu dosyaya kaydet · panoyu LocalSend ile paylaş |
-| `Super+Ctrl+O` · `Super+Ctrl+G` | Şeffaflık · pencere boşlukları |
-| `Super+Shift+E` | **Güvenlik ağı:** kabuk çökse bile Hyprland'den çık |
+| `Super+Space` | App launcher (type `:` for actions) |
+| `Super+Return` / `Super+T` | Terminal (T: focus it if already open) |
+| `Super+B` | Browser (focus it if already open) |
+| `Super+E` / `Super+M` | File manager |
+| `Super+Q` | Close window |
+| `Super+Up` / `Super+F` | Maximize / fullscreen |
+| `Super+V` | Floating window |
+| `Super+1…0` | Workspaces · with `Shift`, move the window |
+| `Super+Ctrl+←/→` | Previous/next workspace |
+| `Super+Shift+←/→/↑/↓` | Move the window to another monitor |
+| `Super+D` · `S` · `U` · `N` | Dashboard · sidebar · utilities · settings (Nexus) |
+| `Super+L` · `Super+Escape` | Lock · session menu |
+| `Super+Tab` | All windows |
+| `Print` / `Shift+Print` | Screenshot (freeze and select) |
+| `Super+Shift+T` · `Super+Shift+Q` | Read text from the screen (OCR) · read a QR code |
+| `Super+Shift+N` | Night light |
+| `Super+Shift+V` · `Super+Shift+S` | Save clipboard to a file · share clipboard via LocalSend |
+| `Super+Ctrl+O` · `Super+Ctrl+G` | Transparency · window gaps |
+| `Super+Shift+E` | **Safety net:** exit Hyprland even if the shell has crashed |
 
-Touchpad: 3/4 parmak yatay → çalışma alanı · 3 parmak yukarı → başlatıcı ·
-3 parmak aşağı → kenar çubuğu.
+Touchpad: 3/4 fingers horizontal → workspaces · 3 fingers up → launcher ·
+3 fingers down → sidebar.
 
-### Launcher eylemleri
+### Launcher actions
 
-`Super+Space` → `:` yaz. 29 eylem var: sistem güncelleme, uygulama
-yöneticisi (zypper + flatpak tek listede), kaldırma, web uygulaması oluşturma,
-AppImage kurma, OCR, QR, gece ışığı, şeffaflık, fontlar, Wi-Fi durumu,
-tema/duvar kağıdı ve güç eylemleri.
+`Super+Space` → type `:`. There are 29 actions: system update, an app manager
+(zypper + flatpak in one list), uninstall, create a web app, install an
+AppImage, OCR, QR, night light, transparency, fonts, Wi-Fi status, theme and
+wallpaper, and power actions.
 
-caelestia yalnızca eylemin **adında** arama yapıyor. O yüzden adlara
-eşanlamlılar gömülü: `:ocr`, `:metin`, `:text` aynı eylemi bulur.
+caelestia only searches an action's **name**, so synonyms in both Turkish and
+English are embedded in the names: `:ocr`, `:metin` and `:text` all find the
+same action.
 
-### Sistem tepsisi menüsü
+### System tray menu
 
-Bar'daki tepsi ikonu (`os-kontrol`) sık kullanılanları tek tıkta toplar:
+The tray icon in the bar (`os-kontrol`) puts common tasks one click away:
 
-- OCR ve QR okuma, gece ışığı, panoyu kaydet/paylaş, dosya paylaş
-- Ekran tazeleme hızı (monitörün desteklediği hızlar)
-- GPU modu (`supergfxctl` varsa), hotspot ([hotspotd](https://github.com/emirberasoguk/hotspotd) varsa)
+- OCR and QR reading, night light, save/share clipboard, share files
+- Screen refresh rate (the rates your monitor supports)
+- GPU mode (if `supergfxctl` is installed), hotspot (if [hotspotd](https://github.com/emirberasoguk/hotspotd) is installed)
 
-İkonlar caelestia'nın o anki renk şemasıyla çizilir. Tema değişince onlar da
-değişir.
+The icons are drawn in caelestia's current color scheme and change along with
+the theme.
 
-### Script'ler
+### Scripts
 
-Hepsi `~/.local/bin/omarchy-suse/` altına kurulur. Terminalden de
-çalışırlar; çoğu argümansız çağrılınca etkileşimli menü açar.
+All are installed to `~/.local/bin/omarchy-suse/`. They also work from a
+terminal; most open an interactive menu when called without arguments. The
+names are Turkish; the table explains each one.
 
-| Script | İş |
+| Script | Purpose |
 |---|---|
-| `os-uygulama` | zypper + flatpak birleşik arama/kurulum, önizlemeli |
-| `os-kaldir` | web uygulaması · paket · flatpak · AppImage kaldırma |
-| `os-guncelle` | `zypper dup` + flatpak; istersen kendi güncelleme fonksiyonun |
-| `os-webapp` | bir siteyi masaüstü uygulamasına çevir (ikonu kendisi bulur) |
-| `os-appimage` | AppImage kur/listele/kaldır, menüye ekle |
-| `os-yakala` | ekrandan OCR (tesseract) ve QR (zbar) |
-| `os-kontrol` | sistem tepsisi menüsü |
-| `os-gece` | hyprsunset ile gece ışığı |
-| `os-pencere` | şeffaflık · boşluk · tam ekran · yüzer · düzen |
-| `os-ac-odaklan` | uygulama açıksa odaklan, değilse başlat |
-| `os-pano-kaydet` | panodaki içeriği türüne göre dosyaya kaydet |
-| `os-paylas` | LocalSend ile pano/dosya/klasör paylaş (flatpak kum havuzu farkında) |
-| `os-font` | sistem fontlarını seç (fzf, önizlemeli) |
-| `os-wifi-durum` | Wi-Fi bandı/AP/sinyal + caelestia'nın koyduğu AP kilidini temizle |
-| `os-hotspot` | hotspotd'yi masaüstünden yönet |
-| `os-kapak` | kapak kapanınca kilitle; harici monitör varsa clamshell |
-| `os-oturum` | kapat/yeniden başlat/çıkış öncesi tam ekran geçiş animasyonu |
-| `os-oturum-bekci` | Hyprland ölünce oturum hedefini durdurur (GDM döngüsünü önler) |
-| `os-kitty-tema` | caelestia şemasından kitty renk teması üretir |
+| `os-uygulama` | Unified zypper + flatpak search and install, with preview |
+| `os-kaldir` | Uninstall web apps · packages · flatpaks · AppImages |
+| `os-guncelle` | `zypper dup` + flatpak, or your own update function |
+| `os-webapp` | Turn a website into a desktop app (finds its icon) |
+| `os-appimage` | Install/list/remove AppImages and add them to the menu |
+| `os-yakala` | OCR (tesseract) and QR (zbar) from a screen region |
+| `os-kontrol` | System tray menu |
+| `os-gece` | Night light with hyprsunset |
+| `os-pencere` | Transparency · gaps · fullscreen · floating · layout |
+| `os-ac-odaklan` | Focus an app if it's open, otherwise launch it |
+| `os-pano-kaydet` | Save the clipboard to a file by content type |
+| `os-paylas` | Share clipboard/files/folders via LocalSend (flatpak sandbox aware) |
+| `os-font` | Pick system fonts (fzf, with preview) |
+| `os-wifi-durum` | Wi-Fi band/AP/signal + clear the AP lock caelestia sets |
+| `os-hotspot` | Manage hotspotd from the desktop |
+| `os-kapak` | Lock on lid close; clamshell mode when an external monitor is connected |
+| `os-oturum` | Full-screen transition animation before shutdown/reboot/logout |
+| `os-oturum-bekci` | Stops the session target when Hyprland dies (prevents the GDM loop) |
+| `os-kitty-tema` | Generates a kitty color theme from the caelestia scheme |
 
-Hepsinin ortak TUI katmanı `lib/os-tui.sh`: gum + fzf, renkler caelestia
-şemasından. API'si için [`docs/EKLENTI-YAZMA.md`](docs/EKLENTI-YAZMA.md).
+Their shared TUI layer is `lib/os-tui.sh`: gum + fzf, with colors from the
+caelestia scheme. API: [`docs/en/EXTENDING.md`](docs/en/EXTENDING.md)
 
-## Nasıl çalışır
+## How it works
 
 ```
 GDM → Hyprland (hyprland.lua)
         └─ baslat-caelestia.sh
-             ├─ WAYLAND_DISPLAY ve DISPLAY'in GERÇEKTEN hazır olmasını bekle
-             ├─ ortamı systemd + D-Bus'a aktar
+             ├─ wait until WAYLAND_DISPLAY and DISPLAY are REALLY ready
+             ├─ export the environment to systemd + D-Bus
              ├─ hyprland-session.target ── portal · hypridle · polkit · gvfs · os-kontrol
-             ├─ hyprland-oturum-bekci.service (çökmede hedefi durdurur)
-             ├─ tepsi ikonlarını üret (kabuktan ÖNCE — Qt ikon önbelleği)
+             ├─ hyprland-oturum-bekci.service (stops the target after a crash)
+             ├─ generate tray icons (BEFORE the shell — Qt icon cache)
              └─ caelestia shell
 ```
 
-Neden bu kadar adım var? Her birinin arkasında sessiz bir hata yatıyor.
-Hepsi [`docs/TUZAKLAR.md`](docs/TUZAKLAR.md)'de yazılı.
+Why so many steps? Each one hides a silent failure. They're all documented in
+[`docs/en/TROUBLESHOOTING.md`](docs/en/TROUBLESHOOTING.md).
 
-## Belgeler
+## Documentation
 
-| Belge | İçerik |
+| Document | Contents |
 |---|---|
-| [`docs/KURULUM.md`](docs/KURULUM.md) | Script'siz, adım adım kurulum ve kurulan dosyaların haritası |
-| [`docs/TUZAKLAR.md`](docs/TUZAKLAR.md) | Belirti → sebep → çözüm: paketleme, oturum, tema, ekran, uygulamalar |
-| [`docs/HYPRLAND-LUA.md`](docs/HYPRLAND-LUA.md) | Hyprland 0.56 Lua config'inde `hyprctl eval`/`dispatch` ve ekranı kapatan tuzaklar |
-| [`docs/EKLENTI-YAZMA.md`](docs/EKLENTI-YAZMA.md) | caelestia'yı çatal açmadan genişletmek: launcher, tepsi, tema kancası, IPC, TUI |
-| [`donanim/nvidia-hibrit/`](donanim/nvidia-hibrit/) | Intel + NVIDIA dizüstüler için isteğe bağlı GPU ayarları |
+| [`docs/en/INSTALL.md`](docs/en/INSTALL.md) | Step-by-step installation without the script, and a map of installed files |
+| [`docs/en/TROUBLESHOOTING.md`](docs/en/TROUBLESHOOTING.md) | Symptom → cause → fix: packaging, session, theme, display, apps |
+| [`docs/en/HYPRLAND-LUA.md`](docs/en/HYPRLAND-LUA.md) | `hyprctl eval`/`dispatch` in Hyprland 0.56's Lua config, and the traps that turn your screen off |
+| [`docs/en/EXTENDING.md`](docs/en/EXTENDING.md) | Extending caelestia without a fork: launcher, tray, theme hook, IPC, TUI |
+| [`donanim/nvidia-hibrit/`](donanim/nvidia-hibrit/README.md) | Optional GPU settings for Intel + NVIDIA laptops |
+| [`docs/README.md`](docs/README.md) | All documents in every language, and how to add a translation |
 
-## Kaldırma
+## Uninstalling
 
 ```bash
 ./kaldir.sh
 ```
 
-Script'leri ve servisleri kaldırır. Paketlere ve yapılandırma dosyalarına
-dokunmaz; yedeklerin yerini gösterir.
+Removes the scripts and services. It doesn't touch packages or configuration
+files, and it shows where your backups are.
 
-## Bilinen sınırlar
+## Known limitations
 
-Bunlar caelestia'nın QML koduna dokunmayı (çatal açmayı) gerektiriyor, bu
-depo bilerek yapmıyor:
+These require changing caelestia's QML code (a fork), which this repository
+deliberately avoids:
 
-- Bar'ı sola değil **üste** almak
-- Hızlı ayarlar paneline **yeni düğme** eklemek
-- Nexus'ta **monitör ayarları** sayfası (upstream'de henüz yok). Monitörler
-  `hyprland.lua` içinden ayarlanır; örnekler dosyada.
-- Dock
+- Moving the bar to the **top** instead of the side
+- Adding **new toggles** to the quick-settings panel
+- A **monitor settings** page in Nexus (not upstream yet). Monitors are
+  configured in `hyprland.lua`; examples are in the file.
+- A dock
 
-## Lisans
+## Contributing translations
 
-[GPL-3.0](LICENSE). Omarchy'den uyarlanan kısımların MIT bildirimi ve diğer
-üçüncü taraf notları: [`NOTICE.md`](NOTICE.md).
+Documentation lives in `docs/<language>/` with the same file names in every
+language. See [`docs/README.md`](docs/README.md) for how to add one.
 
-Bu proje Basecamp/Omarchy, caelestia-dots veya hyprwm ile bağlantılı değildir.
+## License
+
+[GPL-3.0](LICENSE). The MIT notice for the parts adapted from Omarchy and
+other third-party notes: [`NOTICE.md`](NOTICE.md).
+
+This project is not affiliated with Basecamp/Omarchy, caelestia-dots or hyprwm.

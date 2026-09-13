@@ -1,3 +1,5 @@
+🌐 [English](../en/TROUBLESHOOTING.md) · **Türkçe**
+
 # Tuzaklar ve çözümleri
 
 Bu kurulumda karşılaşılan her sorun **belirti → sebep → çözüm** olarak
@@ -53,7 +55,7 @@ Could not find "caelestia" config directory in any valid config path.
 Symbols Rounded, Rubik, CaskaydiaCove NF). Qt varsayılana düşünce metrikler
 tutmuyor ve yerleşim dağılıyor.
 
-**Çözüm:** [KURULUM → Fontlar](KURULUM.md#b-fontlar--dev-yazılar-kutu-ikonlar)
+**Çözüm:** [KURULUM → Fontlar](INSTALL.md#b-fontlar--dev-yazılar-kutu-ikonlar)
 
 ### GTK teması hiçbir şeyi değiştirmiyor
 
@@ -275,7 +277,7 @@ doğrudan GTK'ye bağlıyor: aynı ikon teması, aynı renkler. qt6ct istiyorsan
 **önce kur**.
 
 Ölçüm yöntemi ve Qt'nin diğer ikon tuzakları için:
-[EKLENTI-YAZMA → Sistem tepsisi](EKLENTI-YAZMA.md#4-sistem-tepsisi-sni)
+[EKLENTI-YAZMA → Sistem tepsisi](EXTENDING.md#4-sistem-tepsisi-sni)
 
 ### Yeni terminal pencereleri temayı almıyor
 
@@ -390,7 +392,7 @@ kilitlerini kaldırır. Band sabitlemeye gerek yok: wpa_supplicant 5 GHz'e zaten
 boşaltmaya fırsat bulamadan servisi durduruyor.
 
 **Çözüm:** Reboot değil **oturumu kapatıp aç**. Ayrıntı:
-[donanim/nvidia-hibrit](../donanim/nvidia-hibrit/README.md)
+[donanim/nvidia-hibrit](../../donanim/nvidia-hibrit/README.tr.md)
 
 ---
 

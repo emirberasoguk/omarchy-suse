@@ -1,49 +1,71 @@
-# Intel + NVIDIA hibrit dizüstüler
+🌐 **English** · [Türkçe](README.tr.md)
 
-Bu klasör **isteğe bağlıdır**. Tek GPU'lu (yalnız Intel veya yalnız AMD)
-bir makinede hiçbir şey kurman gerekmez. `hyprland.lua` takma adları
-bulamazsa GPU seçimini Hyprland'e bırakır.
+# Intel + NVIDIA hybrid laptops
 
-## Ne işe yarar
+This folder is **optional**. On a single-GPU machine (Intel-only or AMD-only)
+you don't need to install anything. If `hyprland.lua` doesn't find the aliases,
+it leaves GPU selection to Hyprland.
 
-Hyprland'in hangi GPU'larla çalışacağını `AQ_DRM_DEVICES` belirler. İlk sıradaki
-kart birincil renderer olur. Hibrit dizüstülerde:
+(`donanim` means "hardware"; `nvidia-hibrit` means "NVIDIA hybrid".)
 
-- Compositor pil ömrü için **Intel**'de koşmalı.
-- Bazı modellerde HDMI/USB-C portu fiziksel olarak **NVIDIA**'ya bağlıdır.
-  NVIDIA listede yoksa harici monitör görüntü vermez.
+## What it does
 
-`61-gpu-alias.rules` iki kararlı takma ad oluşturur: `/dev/dri/intel-igpu` ve
-`/dev/dri/nvidia-dgpu`. `hyprland.lua` bunları görürse listeyi **çalışma
-anında** kurar.
+`AQ_DRM_DEVICES` decides which GPUs Hyprland works with. The first card in the
+list becomes the primary renderer. On hybrid laptops:
 
-## Öğrenilmiş dersler
+- The compositor should run on the **Intel** GPU for battery life.
+- On some models the HDMI/USB-C port is physically wired to the **NVIDIA** GPU.
+  If NVIDIA isn't in the list, the external monitor shows nothing.
 
-| Yapma | Neden |
+`61-gpu-alias.rules` creates two stable aliases: `/dev/dri/intel-igpu` and
+`/dev/dri/nvidia-dgpu`. When `hyprland.lua` sees them, it builds the list **at
+runtime**.
+
+## Installing the rule
+
+Verify the PCI addresses first:
+
+```bash
+ls -l /dev/dri/by-path/
+```
+
+The Intel iGPU is almost always `0000:00:02.0`; the NVIDIA dGPU is
+`0000:01:00.0` on most laptops, but it can differ. Edit the rule if needed,
+then:
+
+```bash
+sudo install -m 0644 61-gpu-alias.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=drm
+ls -l /dev/dri/intel-igpu /dev/dri/nvidia-dgpu
+```
+
+## Lessons learned
+
+| Don't | Why |
 |---|---|
-| `GBM_BACKEND=nvidia-drm` koymak | Compositor iGPU'dayken GBM'i NVIDIA'ya zorlamak oturumu kırar |
-| Global `LIBVA_DRIVER_NAME=nvidia` | Intel render düğümü için nvidia arka ucunu yükletmeye çalışır, `vaInitialize` düşer. Ekran kaydı ve tarayıcıda donanımsal video çözme sessizce çalışmaz |
-| `AQ_DRM_DEVICES`'ı sabit yazmak | `supergfxctl -m Integrated` sonrası `nvidia-dgpu` yok olur, Hyprland olmayan cihazı açmaya çalışır |
-| GPU tespitinde `lspci` | Uyuyan dGPU'yu uyandırır, reload'da donmaya yol açabilir. `/dev/dri/by-path/` kullan |
-| `supergfxctl -m <mod>` sonrası **reboot** | Reboot, supergfxd modülleri boşaltmadan servisi durdurur, mod uygulanmaz. Doğrusu **oturumu kapatıp açmak** (logout) ya da supergfxd'de `always_reboot: true` |
+| Set `GBM_BACKEND=nvidia-drm` | Forcing GBM onto NVIDIA while the compositor runs on the iGPU breaks the session |
+| Set a global `LIBVA_DRIVER_NAME=nvidia` | It tries to load the nvidia backend for the Intel render node and `vaInitialize` fails. Screen recording and hardware video decoding in the browser silently stop working |
+| Hard-code `AQ_DRM_DEVICES` | After `supergfxctl -m Integrated`, `nvidia-dgpu` disappears and Hyprland tries to open a device that doesn't exist |
+| Use `lspci` to detect GPUs | It wakes a sleeping dGPU and can freeze on reload. Use `/dev/dri/by-path/` |
+| **Reboot** after `supergfxctl -m <mode>` | A reboot stops supergfxd before it unloads the modules, so the mode isn't applied. **Log out and back in** instead, or set `always_reboot: true` in supergfxd |
 
-## Integrated modun bedeli
+## The cost of Integrated mode
 
-`supergfxctl -m Integrated` NVIDIA'yı tamamen kapatır. NVIDIA'ya bağlı portlar
-(genelde HDMI) **ölür**. Harici monitör gerektiğinde `supergfxctl -m Hybrid`
-ve ardından oturumu kapatıp aç.
+`supergfxctl -m Integrated` turns the NVIDIA GPU off completely. Ports wired to
+NVIDIA (usually HDMI) **stop working**. When you need an external monitor, run
+`supergfxctl -m Hybrid`, then log out and back in.
 
-Tepsi menüsündeki (`os-kontrol`) GPU alt menüsü yalnızca `supergfxctl` kuruluysa
-görünür.
+The GPU submenu in the tray menu (`os-kontrol`) only appears when `supergfxctl`
+is installed.
 
-## Intel donanımsal video
+## Intel hardware video
 
-openSUSE'de Intel VA-API sürücüsü varsayılan gelmeyebilir:
+openSUSE may not ship the Intel VA-API driver by default:
 
 ```bash
 sudo zypper install intel-media-driver libva-utils
-vainfo    # "va_openDriver() returns 0" görmelisin
+vainfo    # you should see "va_openDriver() returns 0"
 ```
 
-Bu olmadan `caelestia record` şu hatayla asılı kalır:
+Without it, `caelestia record` hangs with:
 `neither h264, hevc nor av1 are supported`.

@@ -1,3 +1,5 @@
+🌐 [English](../en/EXTENDING.md) · **Türkçe**
+
 # caelestia'yı çatal açmadan genişletmek
 
 caelestia'nın QML koduna dokunmak (çatal) güçlüdür ama pahalıdır: her
@@ -279,7 +281,7 @@ esac
 Nerd Font ikonları heredoc'lardan ve bazı editörlerden geçerken kaybolabiliyor.
 Kaybolursa `$'\U000F0425'` biçiminde kaçışla yaz.
 
-Bash tuzaklarının tam listesi: [TUZAKLAR → Script yazarken](TUZAKLAR.md#script-yazarken)
+Bash tuzaklarının tam listesi: [TUZAKLAR → Script yazarken](TROUBLESHOOTING.md#script-yazarken)
 
 ## İncelemeye değer kaynaklar
 
@@ -290,4 +292,4 @@ araclar/referanslari-indir.sh
 caelestia (shell, cli), Omarchy, Hyprland wiki ve diğer quickshell kabuklarını
 `referanslar/` altına sığ klonlar. Omarchy'nin `bin/` dizini, dağıtıma
 bağlı olmayan script fikirleriyle dolu. Bu depodaki script'lerin dokuzu
-oradan uyarlandı (bkz. `NOTICE.md`).
+oradan uyarlandı (bkz. [`NOTICE.tr.md`](../../NOTICE.tr.md)).

@@ -85,7 +85,7 @@ Fazlar:
   6  Oturum servisleri (systemd --user)
   7  Küçük sistem düzeltmeleri
 
-Her fazı atlayabilirsin. Ayrıntılar: docs/KURULUM.md
+Her fazı atlayabilirsin. Ayrıntılar: docs/tr/INSTALL.md
 EOF
 
 # ── 1. Resmi depo paketleri ───────────────────────────────────────
@@ -94,7 +94,7 @@ PAKETLER=(
     # Hyprland yığını
     hyprland hyprlock hypridle hyprpolkitagent
     xdg-desktop-portal-hyprland hyprland-qtutils hyprsunset
-    # Olmazsa sessizce kırılanlar — docs/TUZAKLAR.md
+    # Olmazsa sessizce kırılanlar — docs/tr/TROUBLESHOOTING.md
     qt6-platformtheme-gtk3   # Qt ikon/renk teması (yoksa kırık ikon kareleri)
     qt6-sql-sqlite           # yoksa launcher uygulama AÇMAZ
     libnotify-tools          # yoksa hiçbir bildirim görünmez
@@ -133,7 +133,7 @@ cat <<'EOF'
   İçerik eksik DEĞİL — dosyalar pakette var, yalnızca RPM meta verisi eksik.
   zypper'ın sunduğu çözümlerden "bağımlılığı yok sayarak kur" (break ...
   by ignoring some of its dependencies) seçeneğini seç. Ayrıntı:
-  docs/TUZAKLAR.md → "Kurulum ve paketleme".
+  docs/tr/TROUBLESHOOTING.md → "Kurulum ve paketleme".
 EOF
 if sor "home:kaiman eklensin ve caelestia kurulsun mu?"; then
     if zypper lr 2>/dev/null | grep -qi "kaiman"; then
@@ -299,7 +299,7 @@ fi
 if ls /sys/class/drm/card*/device/vendor 2>/dev/null | xargs grep -qs 0x10de; then
     cat <<'EOF'
   d) NVIDIA GPU bulundu. Intel + NVIDIA hibrit bir dizüstüysen
-     donanim/nvidia-hibrit/README.md'yi oku — udev kuralı ELLE kurulur,
+     donanim/nvidia-hibrit/README.tr.md'yi oku — udev kuralı ELLE kurulur,
      çünkü PCI adreslerini önce senin doğrulaman gerekiyor.
 EOF
 fi
@@ -315,5 +315,5 @@ cat <<'EOF'
     cat $XDG_RUNTIME_DIR/baslat-caelestia.log
     qs -c caelestia log
 
-  Kısayollar ve belgeler: README.md · docs/
+  Kısayollar ve belgeler: README.tr.md · docs/tr/
 EOF

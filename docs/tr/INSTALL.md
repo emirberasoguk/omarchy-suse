@@ -1,3 +1,5 @@
+🌐 [English](../en/INSTALL.md) · **Türkçe**
+
 # Adım adım kurulum
 
 `kurulum.sh` bu adımların hepsini sorarak yapar. Bu belge, script
@@ -151,7 +153,7 @@ systemctl --user enable gcr-ssh-agent.socket gnome-keyring-daemon.socket
 
 `hyprland-session.target`'ı **enable etme.** Onu `baslat-caelestia.sh`
 başlatır. Enable edilirse GNOME oturumunda da tetiklenir. Nedeni için bkz.
-[TUZAKLAR → GDM sonsuz şifre döngüsü](TUZAKLAR.md#gdm-sonsuz-şifre-döngüsü).
+[TUZAKLAR → GDM sonsuz şifre döngüsü](TROUBLESHOOTING.md#gdm-sonsuz-şifre-döngüsü).
 
 ## 7. Küçük düzeltmeler
 

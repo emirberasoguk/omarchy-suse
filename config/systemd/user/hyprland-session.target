@@ -13,4 +13,4 @@ RefuseManualStart=no
 # oturumlarında da tetiklenir. Hedefi baslat-caelestia.sh başlatır;
 # os-oturum (normal çıkış) ve hyprland-oturum-bekci.service (çökme) durdurur.
 # Durdurulmazsa sonraki GNOME girişi "A graphical session is already running!"
-# ile çöker → GDM sonsuz şifre döngüsü. Bkz. docs/TUZAKLAR.md
+# ile çöker → GDM sonsuz şifre döngüsü. Bkz. docs/tr/TROUBLESHOOTING.md

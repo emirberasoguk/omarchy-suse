@@ -1,32 +1,33 @@
-🌐 **English** · [Türkçe](NOTICE.tr.md)
+🌐 [English](NOTICE.md) · **Türkçe**
 
-# Third-party notices
+# Üçüncü taraf bildirimleri
 
-omarchy-suse is licensed under the GNU GPL v3 (see `LICENSE`). The parts below
-are adapted from, or work together with, other projects.
+omarchy-suse, GNU GPL v3 ile lisanslanmıştır (bkz. `LICENSE`). Aşağıdaki
+kısımlar başka projelerden uyarlanmıştır ya da onlarla birlikte çalışır.
 
-This project is **not affiliated with or endorsed by Basecamp/Omarchy,
-caelestia-dots or hyprwm**. The name "Omarchy" is used only to credit the
-source of inspiration.
+Bu proje **Basecamp/Omarchy, caelestia-dots veya hyprwm ile bağlantılı değildir**
+ve onlar tarafından onaylanmamıştır. "Omarchy" adı yalnızca ilham kaynağını
+belirtmek için kullanılmıştır.
 
-## Omarchy — MIT License
+## Omarchy — MIT Lisansı
 
-The following scripts adapt the logic of their counterparts in
-[basecamp/omarchy](https://github.com/basecamp/omarchy):
+Aşağıdaki script'ler [basecamp/omarchy](https://github.com/basecamp/omarchy)
+içindeki karşılıklarının mantığından uyarlanmıştır:
 
-| Script | Omarchy counterpart |
+| Script | Omarchy karşılığı |
 |---|---|
 | `bin/os-webapp` | `omarchy-webapp-install` |
 | `bin/os-ac-odaklan` | `omarchy-launch-or-focus` |
 | `bin/os-pencere` | `omarchy-toggle-*` |
 | `bin/os-gece` | `omarchy-toggle-nightlight` |
 | `bin/os-kapak` | `omarchy-system-lid-close` |
-| `bin/os-pano-kaydet` | `omarchy-clipboard-paste-file` (in reverse) |
+| `bin/os-pano-kaydet` | `omarchy-clipboard-paste-file` (ters yönde) |
 | `bin/os-paylas` | `omarchy-menu-share` |
 | `bin/os-font` | `omarchy-font-list` / `omarchy-font-set` |
-| `bin/os-uygulama` | the `omarchy-install-*` family (idea) |
+| `bin/os-uygulama` | `omarchy-install-*` ailesi (fikir) |
 
-Omarchy's license text is reproduced below, as required by the MIT license:
+Omarchy'nin lisans metni, MIT lisansının gerektirdiği şekilde aşağıda aynen
+yer almaktadır:
 
 ```
 Copyright (c) David Heinemeier Hansson
@@ -53,17 +54,17 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## caelestia
 
-[caelestia-dots/shell](https://github.com/caelestia-dots/shell) and
-[caelestia-dots/cli](https://github.com/caelestia-dots/cli) are licensed under
-the GPL v3. This repository **does not contain caelestia's code**. It only uses
-its configuration files (`shell.json`, `cli.json`) and its documented
-interfaces (IPC, launcher actions, `theme.postHook`, the system tray).
-Installation uses the packages from the `home:kaiman` OBS repository.
+[caelestia-dots/shell](https://github.com/caelestia-dots/shell) ve
+[caelestia-dots/cli](https://github.com/caelestia-dots/cli) GPL v3 ile
+lisanslanmıştır. Bu depo caelestia'nın **kodunu içermez**. Yalnızca onun
+yapılandırma dosyalarını (`shell.json`, `cli.json`) ve belgelenmiş
+arayüzlerini (IPC, launcher eylemleri, `theme.postHook`, sistem tepsisi)
+kullanır. Kurulum `home:kaiman` OBS deposundaki paketlerle yapılır.
 
-## Fonts
+## Fontlar
 
-`kurulum.sh` **downloads** these fonts to the user's own machine. They are not
-distributed in this repository:
+`kurulum.sh` şu fontları kullanıcının kendi makinesine **indirir**. Bu depoda
+dağıtılmazlar:
 
 - Material Symbols Rounded — Google, Apache License 2.0
 - Rubik — Google Fonts, SIL Open Font License 1.1

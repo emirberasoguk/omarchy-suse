@@ -1,3 +1,5 @@
+🌐 [English](../en/HYPRLAND-LUA.md) · **Türkçe**
+
 # Hyprland 0.56 Lua config'i ve `hyprctl`
 
 Hyprland 0.56 yapılandırmayı `hyprland.conf` yerine **`hyprland.lua`** ile

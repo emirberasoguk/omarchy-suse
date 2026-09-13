@@ -3,7 +3,7 @@
 --  Hyprland 0.56 (Lua config) · caelestia-shell 2.3 · openSUSE Tumbleweed
 --
 --  Bu dosya ~/.config/hypr/hyprland.lua olarak kurulur.
---  Lua API'si ve hyprctl tuzakları: docs/HYPRLAND-LUA.md
+--  Lua API'si ve hyprctl tuzakları: docs/tr/HYPRLAND-LUA.md
 -- ═══════════════════════════════════════════════════════════════════
 
 -- ═══ KİŞİSEL TERCİHLER — önce burayı düzenle ═══════════════════════
@@ -102,7 +102,7 @@ hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" 
 -- ═══ OTOMATİK BAŞLAYANLAR ═════════════════════════════════════════
 -- Tek giriş noktası. Polkit ajanı, portal, hypridle ve caelestia oradan
 -- başlıyor — WAYLAND_DISPLAY/DISPLAY hazır olduktan SONRA. Neden ayrı script:
--- docs/TUZAKLAR.md → "caelestia açılışta gelmiyor".
+-- docs/tr/TROUBLESHOOTING.md → "caelestia açılışta gelmiyor".
 hl.exec_cmd(HOME .. "/.config/hypr/baslat-caelestia.sh")
 
 -- ═══ ŞEMA RENKLERİ ═══════════════════════════════════════════════
@@ -182,7 +182,7 @@ hl.config({
         disable_splash_rendering = true,
         -- GÜVENLİK AĞI — KAPATMA. DPMS kapalıyken tuş/fare ekranı geri getirsin.
         -- İkisi de false iken yanlış bir dpms komutu ekranı kalıcı kapatır ve
-        -- geri dönüş yolu yalnızca güç tuşu kalır. Bkz. docs/HYPRLAND-LUA.md
+        -- geri dönüş yolu yalnızca güç tuşu kalır. Bkz. docs/tr/HYPRLAND-LUA.md
         key_press_enables_dpms = true,
         mouse_move_enables_dpms = true,
     },
