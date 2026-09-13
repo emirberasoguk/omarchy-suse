@@ -137,6 +137,8 @@ Bu yolun tuzakları hep aynı sebepten çıkıyor: **menüyü GTK değil, Quicks
 | Adwaita symbolic ikonları | Koyu menüde koyu ikon. GTK renklendirir, Quickshell renklendirmez | SVG'yi şema rengiyle kendin üret |
 | İkon yalnızca `IconThemePath`'te | Kırık kare. caelestia önce tema araması yapar, yedek yolda uzantı eklemez | İkonu `~/.local/share/icons/hicolor/scalable/apps/` altına da yaz |
 | Kabuk çalışırken hicolor'a yeni ikon eklemek | Görünmez. Qt ikon temasını **süreç başlarken** önbelleğe alır | Kabuğu yeniden başlat; kalıcı çözüm için ikonları kabuktan önce üret (`baslat-caelestia.sh`) |
+| Durumu birkaç saniyede bir `hyprctl`/`pgrep`/CLI araçlarıyla yoklamak | Ölçülebilir CPU ve pil kaybı: 3 sn'de bir 6 süreç, 49 dakikada 40 sn CPU yedi ve işlemciyi derin uykudan alıkoydu | Hyprland soketine doğrudan bağlan, `pgrep` yerine `/proc`'u oku, D-Bus sinyallerine abone ol (ör. supergfxd `NotifyGfx`), kalanı seyrek yokla. `os-kontrol` saatte ~7 200 süreçten ~360'a indi |
+| Her yoklamada `set_icon_full` çağırmak | Hiçbir şey değişmese de birkaç saniyede bir D-Bus trafiği | İkonu yalnızca durum değişince gönder |
 
 ### Ölçerek doğrulamak
 
@@ -232,9 +234,11 @@ kullan.
 
 ## Terminal arayüzü: `lib/os-tui.sh`
 
-Bash script'lerinin ortak katmanı. Renkleri caelestia şemasından okur; dosya
-yoksa varsayılana düşer, script kırılmaz. `gum` ve `fzf` yoksa düz `read` ve
-`select`'e düşer.
+Bash script'lerinin ortak katmanı. Renkleri caelestia şemasından `jq` ile
+okur (≈3 ms; yoksa `python3`); dosya yoksa varsayılana düşer, script kırılmaz.
+`gum` ve `fzf` yoksa düz `read` ve `select`'e düşer. Terminal yoksa (systemd,
+cron) soru soran fonksiyonlar asla askıda kalmaz: `onay` hayır der,
+`secim`/`ara` boş döner, `giris_al` varsayılanını verir.
 
 ```bash
 #!/bin/bash

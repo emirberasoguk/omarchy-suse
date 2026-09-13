@@ -154,8 +154,10 @@ graphical-session-pre.target
 dies, that process is orphaned to PID 1 and **ignores SIGTERM**. A dead
 session piles up on every logout.
 
-**Fix:** `os-oturum` runs `pkill -KILL -u "$USER" -x nmcli` before logging
-out. caelestia respawns it on its own afterwards.
+**Fix:** Before logging out, `os-oturum` kills only the `nmcli` processes
+whose first argument is `monitor`, so a short-lived `nmcli` command running
+at that moment is left alone. caelestia respawns the monitor on its own
+afterwards.
 
 ### "Log out" in the session menu does nothing
 

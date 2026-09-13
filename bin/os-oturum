@@ -33,9 +33,16 @@ cikis_yap() {
     #    ve SIGTERM'i YOK SAYIYOR; bu yüzden `terminate-session` oturumu
     #    kapatamıyor, "closing" durumunda asılı kalıyor ve her çıkışta bir
     #    ölü oturum birikiyordu (2026-09-08'de üç tane vardı).
-    #    `-x` tam süreç ADINA bakar, komut satırına değil — kendi kabuğumuzu
-    #    öldürme riski yok (bkz. docs/tr/TROUBLESHOOTING.md).
-    pkill -KILL -u "$USER" -x nmcli 2>/dev/null || true
+    #    Yalnızca `nmcli monitor` öldürülür: süreç adı nmcli OLAN ve ilk
+    #    argümanı "monitor" olanlar. O an çalışan başka bir nmcli komutuna
+    #    (ör. os-wifi-durum) dokunulmaz. `pkill -f` kullanılmıyor — komut
+    #    satırında deseni taşıyan kendi kabuğumuzu da öldürürdü.
+    local pid
+    local -a argv
+    for pid in $(pgrep -u "$USER" -x nmcli 2>/dev/null); do
+        mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || continue
+        [ "${argv[1]:-}" = "monitor" ] && kill -KILL "$pid" 2>/dev/null
+    done
 
     # 3) logind oturumunu sonlandır.
     if [ -n "${XDG_SESSION_ID:-}" ]; then

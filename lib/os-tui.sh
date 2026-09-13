@@ -21,17 +21,33 @@ _tui_varsayilan() {
 _tui_varsayilan
 
 _tui_palet_yukle() {
-    local s="$HOME/.local/state/caelestia/scheme.json"
+    local s="$HOME/.local/state/caelestia/scheme.json" out=""
     [ -r "$s" ] || return 0
-    local out
-    out=$(python3 - "$s" <<'PY' 2>/dev/null
-import json, sys
+    # jq ~3 ms, python3 ~17 ms (ölçüldü). Bu, her TUI açılışında çalışıyor;
+    # jq varsa o, yoksa python3. Değerler 6 haneli hex olarak doğrulanmadan
+    # eval'e girmiyor.
+    if command -v jq >/dev/null 2>&1; then
+        out=$(jq -r '
+            (.colours // .) as $c
+            | {TUI_PRIMARY: "primary",     TUI_ON_PRIMARY: "onPrimary",
+               TUI_SURFACE: "surface",     TUI_ON_SURFACE: "onSurface",
+               TUI_CONTAINER: "surfaceContainer",
+               TUI_SECONDARY: "secondary", TUI_TERTIARY: "tertiary",
+               TUI_ERROR: "error",         TUI_OUTLINE: "outline",
+               TUI_VARIANT: "onSurfaceVariant"}
+            | to_entries[]
+            | ($c[.value] // "" | tostring | ltrimstr("#")) as $v
+            | select($v | test("^[0-9a-fA-F]{6}$"))
+            | "\(.key)=\($v)"' "$s" 2>/dev/null) || out=""
+    else
+        out=$(python3 - "$s" <<'PY' 2>/dev/null
+import json, re, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
     sys.exit(1)
 c = d.get("colours", d)
-eş = {
+es = {
     "TUI_PRIMARY": "primary",       "TUI_ON_PRIMARY": "onPrimary",
     "TUI_SURFACE": "surface",       "TUI_ON_SURFACE": "onSurface",
     "TUI_CONTAINER": "surfaceContainer",
@@ -39,12 +55,13 @@ eş = {
     "TUI_ERROR": "error",           "TUI_OUTLINE": "outline",
     "TUI_VARIANT": "onSurfaceVariant",
 }
-for k, v in eş.items():
-    r = c.get(v)
-    if isinstance(r, str) and len(r.lstrip("#")) == 6:
-        print(f'{k}={r.lstrip("#")}')
+for k, v in es.items():
+    r = str(c.get(v, "")).lstrip("#")
+    if re.fullmatch(r"[0-9a-fA-F]{6}", r):
+        print(f"{k}={r}")
 PY
-    ) || return 0
+        ) || out=""
+    fi
     [ -n "$out" ] && eval "$out"
     return 0
 }
@@ -88,6 +105,11 @@ export FZF_DEFAULT_OPTS="\
 
 # ── Yardımcılar ───────────────────────────────────────────────────
 _tui_var() { command -v "$1" >/dev/null 2>&1; }
+# Etkileşimli terminal var mı? gum ve fzf /dev/tty açıyor; systemd, cron ya da
+# terminalsiz launcher'dan çağrılınca açamıyor ve "could not open a new TTY"
+# diye gürültü basıyor. Soru soran fonksiyonlar bunu önce sınar ve güvenli
+# tarafa (hayır / boş / varsayılan) düşer — asla askıda kalmaz.
+_tui_tty_var() { { : </dev/tty; } 2>/dev/null; }
 _tui_genislik() { local w=${COLUMNS:-0}; [ "$w" -gt 0 ] || w=$(tput cols 2>/dev/null || echo 80); [ "$w" -gt 100 ] && w=100; echo "$w"; }
 # görünen karakter sayısı (ANSI ve emoji/ikon dışı)
 _tui_uzunluk() { local s=${1//$'\033'\[*([0-9;])m/}; printf '%s' "$s" | wc -m; }
@@ -149,6 +171,7 @@ baslikcik() { printf '\n %s%s%s%s\n' "$C_ANA$TUI_KALIN" "$*" "$TUI_SIFIR" ""; }
 # secim "Ne yapmak istiyorsun?" "󰍉  Ara" "󰏔  Kur" "󰩹  Kaldır"
 secim() {
     local soru="$1"; shift
+    _tui_tty_var || return 1
     if _tui_var gum; then
         gum choose --header "$soru" --header.foreground "#$TUI_VARIANT" \
                    --cursor.foreground "#$TUI_PRIMARY" "$@"
@@ -162,6 +185,7 @@ secim() {
 # stdin'den satır alır. ara "Paket ara" "önizleme komutu {}"
 ara() {
     local baslik_="${1:-Ara}" onizleme="${2:-}"
+    _tui_tty_var || { cat >/dev/null; return 1; }
     if ! _tui_var fzf; then cat; return; fi
     if [ -n "$onizleme" ]; then
         fzf --prompt "❯ " --header "$baslik_" --preview "$onizleme" \
@@ -174,6 +198,9 @@ ara() {
 # ── Onay ──────────────────────────────────────────────────────────
 onay() {
     local soru="$1" varsayilan="${2:-hayir}"
+    # Terminal yoksa varsayılan "evet" olsa bile HAYIR: otomasyonda onaysız
+    # hiçbir şey yapılmasın.
+    _tui_tty_var || return 1
     if _tui_var gum; then
         if [ "$varsayilan" = "evet" ]; then
             gum confirm --affirmative "Evet" --negative "Hayır" "$soru"
@@ -189,6 +216,7 @@ onay() {
 # ── Metin girişi ──────────────────────────────────────────────────
 giris_al() {
     local ipucu="$1" varsayilan="${2:-}"
+    _tui_tty_var || { printf '%s\n' "$varsayilan"; return 0; }
     if _tui_var gum; then
         gum input --placeholder "$ipucu" --value "$varsayilan" --prompt "❯ "
     else

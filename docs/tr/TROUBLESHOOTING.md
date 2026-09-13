@@ -152,8 +152,9 @@ graphical-session-pre.target
 süreç öksüz kalıp PID 1'e devroluyor ve **SIGTERM'i yok sayıyor**. Her çıkışta
 bir ölü oturum birikiyor.
 
-**Çözüm:** `os-oturum` çıkıştan önce `pkill -KILL -u "$USER" -x nmcli`
-çalıştırıyor. caelestia süreci sonra kendiliğinden yeniden başlatıyor.
+**Çözüm:** `os-oturum` çıkıştan önce yalnızca ilk argümanı `monitor` olan
+`nmcli` süreçlerini öldürüyor; o an çalışan kısa ömürlü bir `nmcli` komutuna
+dokunmuyor. caelestia monitörü sonra kendiliğinden yeniden başlatıyor.
 
 ### Oturum menüsünde "Çıkış" hiçbir şey yapmıyor
 

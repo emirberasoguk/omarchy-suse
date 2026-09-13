@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -35,7 +36,7 @@ except (ValueError, ImportError):
         "AyatanaAppIndicator3 typelib yok.\n"
         "  sudo zypper install typelib-1_0-AyatanaAppIndicator3-0_1"
     )
-from gi.repository import GLib, Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 BIN = Path.home() / ".local/bin/omarchy-suse"
 # Menü ikonları BAR'IN DİLİYLE uyumlu olsun diye hepsi "-symbolic":
@@ -256,6 +257,7 @@ def ikonlari_uret() -> list[str]:
         dizin.mkdir(parents=True, exist_ok=True)
         (dizin / f"{IKON_ACIK}.svg").write_text(acik_svg.format(r=renk))
         (dizin / f"{IKON_KAPALI}.svg").write_text(kapali_svg.format(r=renk))
+    (IKON_DIZIN / ".ikon-seti").write_text(IKON_SETI)
     yeni = sembolleri_uret(renk)
     try:
         subprocess.run(["gtk-update-icon-cache", "-qtf", str(HICOLOR.parents[1])],
@@ -265,7 +267,32 @@ def ikonlari_uret() -> list[str]:
     return yeni
 
 
+SEMA_DOSYA = Path.home() / ".local/state/caelestia/scheme.json"
+
+
+def ikonlar_guncel() -> bool:
+    """Servis her başladığında ~16 SVG yazıp ikon önbelleğini yeniden kurmak
+    gereksiz: baslat-caelestia.sh kabuktan ÖNCE, theme.postHook da her tema
+    değişiminde `--ikonlar` ile üretiyor. Servis yalnızca bir ikon eksikse,
+    şemadan eskiyse ya da ikon seti (OS_KONTROL_IKON) değiştiyse üretir."""
+    try:
+        if (IKON_DIZIN / ".ikon-seti").read_text().strip() != IKON_SETI:
+            return False
+        sema = SEMA_DOSYA.stat().st_mtime if SEMA_DOSYA.exists() else 0
+        dosyalar = [d / f"{ad}.svg" for d in (IKON_DIZIN, HICOLOR)
+                    for ad in (IKON_ACIK, IKON_KAPALI)]
+        dosyalar += [HICOLOR / f"os-kontrol-s-{a}.svg" for a in SEMBOLLER]
+        return all(f.stat().st_mtime >= sema for f in dosyalar)
+    except OSError:
+        return False
+
+
 # ── Sistem durumu okuma ───────────────────────────────────────────
+# Maliyet notu: nabız her 3 sn'de çalışıyor. Eskiden her nabızda 6 süreç
+# doğuyordu (pgrep ×2, hyprctl, supergfxctl ×2, iw) — saatte ~7 200 süreç,
+# ölçümde 49 dakikada 40 sn CPU. Dizüstünde işlemcinin derin uykuya girmesini
+# engelliyordu. Artık nabızda süreç doğmuyor: Hyprland'e soketten, hyprsunset'e
+# /proc'tan bakılıyor; GPU D-Bus sinyaliyle, hotspot seyrek okunuyor.
 def kabuk(*komut: str, timeout: float = 4.0) -> str:
     try:
         r = subprocess.run(komut, capture_output=True, text=True, timeout=timeout)
@@ -283,8 +310,51 @@ def calistir(*komut: str) -> None:
         pass
 
 
+def hypr_istek(komut: str) -> str:
+    """Hyprland'in IPC soketine doğrudan sor — hyprctl süreci başlatmadan.
+    Ölçüm: soket ~0.01 ms, `hyprctl monitors -j` ~3 ms + süreç doğumu.
+    İmza ortamda yoksa ya da soket açılamazsa hyprctl'e düşer."""
+    imza = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    calisma = os.environ.get("XDG_RUNTIME_DIR")
+    if imza and calisma:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(2)
+                s.connect(f"{calisma}/hypr/{imza}/.socket.sock")
+                s.sendall(komut.encode())
+                parcalar = []
+                while parca := s.recv(65536):
+                    parcalar.append(parca)
+            return b"".join(parcalar).decode(errors="replace")
+        except OSError:
+            pass
+    bayrak, _, geri = komut.partition("/")
+    return kabuk("hyprctl", *geri.split(), *(["-j"] if "j" in bayrak else []))
+
+
+def surec_calisiyor(ad: str) -> bool:
+    """pgrep çatallamadan /proc'tan bak (pgrep ~11 ms + süreç, bu ~5 ms).
+    Süreç adı (comm) çekirdekte 15 karakterde kesilir; kısa adlar için."""
+    hedef = ad.encode()
+    try:
+        girdiler = os.scandir("/proc")
+    except OSError:
+        return False
+    with girdiler:
+        for g in girdiler:
+            if not g.name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{g.name}/comm", "rb") as f:
+                    if f.read().rstrip(b"\n") == hedef:
+                        return True
+            except OSError:
+                continue
+    return False
+
+
 def gece_acik() -> bool:
-    return bool(kabuk("pgrep", "-x", "hyprsunset"))
+    return surec_calisiyor("hyprsunset")
 
 
 def kayit_suruyor() -> bool:
@@ -292,7 +362,7 @@ def kayit_suruyor() -> bool:
 
 
 def hypr_secenek(ad: str, alan: str = "float") -> str:
-    ham = kabuk("hyprctl", "getoption", ad, "-j")
+    ham = hypr_istek(f"j/getoption {ad}")
     try:
         return str(json.loads(ham).get(alan, ""))
     except (json.JSONDecodeError, AttributeError):
@@ -312,7 +382,7 @@ def ekran() -> dict:
     """Tazeleme hızı ayarlanacak monitör: dahili panel (eDP*) varsa o,
     yoksa odaktaki monitör. Hiç monitör okunamazsa boş sözlük."""
     try:
-        m = json.loads(kabuk("hyprctl", "monitors", "-j"))
+        m = json.loads(hypr_istek("j/monitors"))
     except json.JSONDecodeError:
         return {}
     if not isinstance(m, list) or not m:
@@ -406,7 +476,7 @@ def wifi_band() -> str:
 # ── Menü ──────────────────────────────────────────────────────────
 class Kontrol:
     def __init__(self) -> None:
-        yeni_ikonlar = ikonlari_uret()
+        yeni_ikonlar = [] if ikonlar_guncel() else ikonlari_uret()
         # Kabuk zaten koşuyorken yeni bir ikon eklendiyse Qt onu göremez
         # (ikon teması süreç başlarken önbelleğe alınıyor) ve menüde ikon
         # yerine boşluk çıkar. Sessiz kalmasın: söyle.
@@ -431,7 +501,13 @@ class Kontrol:
         # kurulumdaki değerlerde donuyordu. Durumu yoklayıp değiştiğinde
         # yeniden kuruyoruz.
         self._imza = None
+        self._tik = 0
+        self._gece_ikon = None          # tepsiye son gönderilen ikon durumu
+        self._gpu = ("", "")            # (aktif, bekleyen) — kur() ve sinyal tazeler
+        self._hotspot = (False, "")     # (açık, SSID)      — kur() ve seyrek nabız tazeler
+        self._bus = None
         self.kur()
+        self._gpu_dinle()
         GLib.timeout_add_seconds(3, self.nabiz)
 
     # -- yardımcılar --
@@ -494,7 +570,7 @@ class Kontrol:
                    lambda: calistir(str(BIN / "os-paylas"), "dosya"), sembol("dosya-paylas"))
 
         self._ayrac()
-        hs_acik, hs_ssid = hotspot()
+        hs_acik, hs_ssid = self._hotspot = hotspot()
         hs_kurulu, hs_kaynak = hotspotd_surumler()
         if hs_kurulu:
             hs_ogeler = [
@@ -523,7 +599,7 @@ class Kontrol:
                           [(f"{s} Hz", lambda s=s: self.mod_ayarla(s)) for s in secenekler],
                           sembol("ekran"))
 
-        aktif, bekleyen = gpu_modu()
+        aktif, bekleyen = self._gpu = gpu_modu()
         if aktif:
             etiket = f"GPU  ·  {aktif}" + (f"  →  {bekleyen} (çıkış gerekli)" if bekleyen else "")
             self._altmenu(etiket, [
@@ -560,21 +636,55 @@ class Kontrol:
 
     def gpu_ayarla(self, mod: str) -> None:
         calistir("supergfxctl", "-m", mod)
+        # Sinyal gelmese bile bekleyen modu kısa süre sonra göster
+        GLib.timeout_add(1500, lambda: (self._gpu_degisti(), False)[1])
+
+    def _gpu_dinle(self) -> None:
+        """GPU modu yalnızca supergfxd üzerinden değişir ve supergfxd bunu
+        D-Bus sinyaliyle duyurur (NotifyGfx · NotifyAction · NotifyGfxStatus).
+        Her 3 sn'de iki supergfxctl süreci doğurmak yerine sinyali dinliyoruz;
+        sinyal kaçarsa diye nabız yine de dakikada bir tazeliyor."""
+        if not shutil.which("supergfxctl"):
+            return
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        except GLib.Error:
+            return
+        for sinyal in ("NotifyGfx", "NotifyAction", "NotifyGfxStatus"):
+            bus.signal_subscribe("org.supergfxctl.Daemon", "org.supergfxctl.Daemon",
+                                 sinyal, "/org/supergfxctl/Gfx", None,
+                                 Gio.DBusSignalFlags.NONE,
+                                 lambda *_: self._gpu_degisti())
+        self._bus = bus   # abonelik bağlantı nesnesi yaşadıkça geçerli
+
+    def _gpu_degisti(self) -> None:
+        self._gpu = gpu_modu()
 
     def durum_imzasi(self) -> tuple:
-        """Menüde görünen her şeyin özeti — değişince menü yeniden kurulur."""
-        return (gece_acik(), tazeleme(), gpu_modu(), hotspot())
+        """Menüde görünen her şeyin özeti — değişince menü yeniden kurulur.
+        Nabızda süreç doğurmaz: GPU ve hotspot önbellekten gelir."""
+        return (gece_acik(), tazeleme(), self._gpu, self._hotspot)
 
     def nabiz(self) -> bool:
+        self._tik += 1
+        if self._tik % 5 == 0:          # 15 sn — iw dev
+            self._hotspot = hotspot()
+        if self._tik % 20 == 0:         # 60 sn — sinyal kaçtıysa yedek
+            self._gpu = gpu_modu()
         imza = self.durum_imzasi()
         if imza != self._imza:
             self.kur()
         else:
-            self.ikon_yenile()
+            self.ikon_yenile(imza[0])
         return True
 
-    def ikon_yenile(self) -> bool:
-        self.ind.set_icon_full(IKON_ACIK if gece_acik() else IKON_KAPALI, "Kontrol")
+    def ikon_yenile(self, gece: bool | None = None) -> bool:
+        if gece is None:
+            gece = gece_acik()
+        # Değişmediyse D-Bus'a yeniden gönderme (her 3 sn'de gereksiz trafik)
+        if gece != self._gece_ikon:
+            self.ind.set_icon_full(IKON_ACIK if gece else IKON_KAPALI, "Kontrol")
+            self._gece_ikon = gece
         return True
 
 

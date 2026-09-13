@@ -137,6 +137,8 @@ Quickshell (Qt), not GTK.**
 | Adwaita symbolic icons | Dark icons on a dark menu. GTK recolors them, Quickshell doesn't | Generate the SVG yourself with the scheme color |
 | Icon only in `IconThemePath` | Broken square. caelestia does a theme lookup first, and its fallback path adds no extension | Also write the icon to `~/.local/share/icons/hicolor/scalable/apps/` |
 | Adding a new icon to hicolor while the shell is running | Invisible. Qt caches the icon theme **at process start** | Restart the shell; for a permanent fix, generate icons before the shell starts (`baslat-caelestia.sh`) |
+| Polling state with `hyprctl`/`pgrep`/CLI tools every few seconds | Measurable CPU and battery drain: 6 processes every 3 s used 40 s of CPU in 49 minutes and kept the CPU out of deep sleep | Talk to Hyprland's socket directly, read `/proc` instead of `pgrep`, subscribe to D-Bus signals (e.g. supergfxd `NotifyGfx`), poll the rest rarely. `os-kontrol` went from ~7 200 to ~360 processes per hour |
+| Calling `set_icon_full` on every poll | D-Bus traffic every few seconds even when nothing changed | Send the icon only when the state changes |
 
 ### Verify by measuring
 
@@ -233,8 +235,11 @@ keybindings.
 ## Terminal UI: `lib/os-tui.sh`
 
 The shared layer for the Bash scripts. It reads colors from the caelestia
-scheme; if the file is missing it falls back to defaults and nothing breaks.
-Without `gum` and `fzf` it falls back to plain `read` and `select`.
+scheme with `jq` (≈3 ms; `python3` as a fallback); if the file is missing it
+falls back to defaults and nothing breaks. Without `gum` and `fzf` it falls
+back to plain `read` and `select`. Without a terminal (systemd, cron) the
+prompting functions never hang: `onay` answers no, `secim`/`ara` return
+nothing, `giris_al` returns its default.
 
 The function names are Turkish; the table gives their meaning.
 
